@@ -1,70 +1,86 @@
-# Getting Started with Create React App
+# Simple EPUB Reader
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A modern, web-based EPUB reader built with React. Features a clean interface, dark/light themes, full-text search, and distraction-free reading mode.
 
-## Available Scripts
+## 🚀 Live Demo
 
-In the project directory, you can run:
+[https://paulius11.github.io/simple-epub-reader](https://paulius11.github.io/simple-epub-reader)
 
-### `npm start`
+## ✨ Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- 📚 **EPUB File Support** - Upload and read EPUB files directly in your browser
+- 🔍 **Full-Text Search** - Search across all chapters with highlighted results
+- 🌓 **Dark/Light Mode** - Toggle between themes for comfortable reading
+- 📖 **Reading Modes** - Switch between normal and distraction-free fullscreen mode
+- ⌨️ **Keyboard Navigation** - Use arrow keys to navigate between chapters
+- 📱 **Responsive Design** - Works seamlessly on desktop and mobile devices
+- 🎨 **Modern UI** - Clean interface with smooth animations and gradients
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## 🛠️ Installation
 
-### `npm test`
+1. Clone the repository:
+```bash
+git clone https://github.com/Paulius11/simple-epub-reader.git
+cd simple-epub-reader
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+2. Install dependencies:
+```bash
+npm install
+```
 
-### `npm run build`
+3. Start the development server:
+```bash
+npm start
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## 📦 Deployment
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+To deploy to GitHub Pages:
 
-### `npm run eject`
+```bash
+npm run deploy
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## 🔧 Technologies Used
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- React 19
+- Lucide React (icons)
+- JSZip (EPUB parsing)
+- CSS Custom Properties (theming)
+- GitHub Pages (hosting)
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## 📝 Usage
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+1. Click "Choose EPUB File" to upload an EPUB book
+2. Navigate chapters using:
+   - Previous/Next buttons
+   - Chapter dropdown selector
+   - Arrow keys (← →)
+   - Click on left/right edges in reading mode
+3. Search for text using the search bar
+4. Toggle between light/dark themes
+5. Enter reading mode for distraction-free experience
 
-## Learn More
+## 🤝 Contributing
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Contributions are welcome! Feel free to:
+- Report bugs
+- Suggest new features
+- Submit pull requests
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## 📄 License
 
-### Code Splitting
+This project is open source and available under the [MIT License](LICENSE).
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## 👤 Author
 
-### Analyzing the Bundle Size
+**Paulius11**
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- GitHub: [@Paulius11](https://github.com/Paulius11)
 
-### Making a Progressive Web App
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+⭐ If you find this project useful, please consider giving it a star!
