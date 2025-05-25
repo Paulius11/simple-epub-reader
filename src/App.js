@@ -39,65 +39,173 @@ const EPUBReader = () => {
     const div = document.createElement('div');
     div.innerHTML = content;
     
-    // Process images
-    const images = div.querySelectorAll('img');
-    for (const img of images) {
-      const src = img.getAttribute('src');
-      if (src && !src.startsWith('http')) {
+    // Process both HTML img tags and SVG image tags
+    const htmlImages = div.querySelectorAll('img');
+    const svgImages = div.querySelectorAll('image'); // SVG image elements
+    const allImages = [...htmlImages, ...svgImages];
+    
+    console.log(`Processing ${allImages.length} images in chapter: ${chapterPath} (${htmlImages.length} HTML img, ${svgImages.length} SVG image)`);
+    
+    for (const img of allImages) {
+      // Get the image source - could be src, xlink:href, or href
+      const src = img.getAttribute('src') || 
+                  img.getAttribute('xlink:href') || 
+                  img.getAttribute('href') ||
+                  img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      
+      console.log('Processing image:', src, 'Element type:', img.tagName);
+      
+      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
         try {
-          // Calculate the correct path for the image - handle different path scenarios
-          let imagePath;
+          // Extract just the filename from the src
+          const filename = src.split('/').pop();
           
+          // Calculate the proper path based on the chapter's location
+          let resolvedPath = '';
           if (src.startsWith('../')) {
-            // Handle relative paths that go up directories
+            // Go up one directory from chapter directory
             const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
             const parentDir = chapterDir.substring(0, chapterDir.lastIndexOf('/'));
-            imagePath = `${parentDir}/${src.substring(3)}`;
+            resolvedPath = `${parentDir}/${src.substring(3)}`;
           } else if (src.startsWith('./')) {
-            // Handle current directory relative paths
             const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
-            imagePath = `${chapterDir}/${src.substring(2)}`;
+            resolvedPath = `${chapterDir}/${src.substring(2)}`;
           } else if (src.startsWith('/')) {
-            // Handle absolute paths from root
-            imagePath = opfDir ? `${opfDir}${src}` : src.substring(1);
+            resolvedPath = opfDir ? `${opfDir}${src}` : src.substring(1);
           } else {
-            // Handle relative paths without prefix
             const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
-            imagePath = chapterDir ? `${chapterDir}/${src}` : src;
+            resolvedPath = chapterDir ? `${chapterDir}/${src}` : src;
           }
           
-          // Try to find the image file (case-insensitive search)
-          let imageFile = zip.file(imagePath);
+          console.log('Resolved image path:', resolvedPath);
+          
+          // Try different possible image paths
+          const pathVariations = [
+            resolvedPath,
+            `Images/${filename}`,
+            `images/${filename}`,
+            `OEBPS/Images/${filename}`,
+            `OEBPS/images/${filename}`,
+            `${opfDir}/Images/${filename}`,
+            `${opfDir}/images/${filename}`,
+            filename,
+            src
+          ];
+          
+          // Remove duplicates and invalid paths
+          const uniquePaths = [...new Set(pathVariations.filter(path => path && path !== 'undefined' && path !== 'null'))];
+          
+          let imageFile = null;
+          let successfulPath = '';
+          
+          // Try each path variation
+          for (const path of uniquePaths) {
+            try {
+              const testFile = zip.file(path);
+              if (testFile) {
+                imageFile = testFile;
+                successfulPath = path;
+                break;
+              }
+              
+              // Also try case-insensitive versions
+              const lowerPath = path.toLowerCase();
+              const lowerFile = zip.file(lowerPath);
+              if (lowerFile) {
+                imageFile = lowerFile;
+                successfulPath = lowerPath;
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          // If still not found, search through all files in the zip
           if (!imageFile) {
-            // Try different variations if the exact path doesn't work
-            const pathVariations = [
-              imagePath,
-              imagePath.toLowerCase(),
-              imagePath.replace(/\\/g, '/'),
-              `images/${src}`,
-              `Images/${src}`,
-              `OEBPS/images/${src}`,
-              `OEBPS/Images/${src}`
-            ];
+            const allFiles = Object.keys(zip.files);
+            const imageFiles = allFiles.filter(file => 
+              file.toLowerCase().endsWith('.jpg') || 
+              file.toLowerCase().endsWith('.jpeg') || 
+              file.toLowerCase().endsWith('.png') || 
+              file.toLowerCase().endsWith('.gif') || 
+              file.toLowerCase().endsWith('.svg') || 
+              file.toLowerCase().endsWith('.webp')
+            );
             
-            for (const variation of pathVariations) {
-              imageFile = zip.file(variation);
-              if (imageFile) break;
+            // Look for a file with matching name
+            const matchingFile = imageFiles.find(file => {
+              const fileBasename = file.split('/').pop().toLowerCase();
+              const srcBasename = filename.toLowerCase();
+              return fileBasename === srcBasename || fileBasename.startsWith(srcBasename.split('.')[0]);
+            });
+            
+            if (matchingFile) {
+              imageFile = zip.file(matchingFile);
+              successfulPath = matchingFile;
             }
           }
           
           if (imageFile) {
-            // Load the image from the zip
-            const imageData = await imageFile.async('base64');
-            const imageType = getImageMimeType(imagePath);
-            img.src = `data:${imageType};base64,${imageData}`;
+            try {
+              // Load the image from the zip
+              const imageData = await imageFile.async('base64');
+              const imageType = getImageMimeType(successfulPath);
+              const dataUrl = `data:${imageType};base64,${imageData}`;
+              
+              if (img.tagName.toLowerCase() === 'image') {
+                // Handle SVG image elements - convert to HTML img
+                const newImg = document.createElement('img');
+                newImg.src = dataUrl;
+                newImg.setAttribute('data-src', dataUrl);
+                newImg.setAttribute('data-loaded', 'true');
+                
+                // Copy dimensions if they exist
+                const width = img.getAttribute('width');
+                const height = img.getAttribute('height');
+                if (width) newImg.style.width = width.includes('px') ? width : width + 'px';
+                if (height) newImg.style.height = height.includes('px') ? height : height + 'px';
+                
+                // Add styling
+                newImg.style.maxWidth = '100%';
+                newImg.style.height = 'auto';
+                newImg.style.display = 'block';
+                newImg.style.margin = '10px auto';
+                
+                // Replace the SVG image with HTML img
+                img.parentNode.replaceChild(newImg, img);
+                
+                console.log('Successfully converted SVG image to HTML img:', src, 'from path:', successfulPath);
+              } else {
+                // Handle regular HTML img elements
+                img.setAttribute('src', dataUrl);
+                img.setAttribute('data-src', dataUrl);
+                img.setAttribute('data-loaded', 'true');
+                
+                // Add styling
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+                img.style.display = 'block';
+                img.style.margin = '10px auto';
+                
+                console.log('Successfully loaded HTML image:', src, 'from path:', successfulPath);
+              }
+            } catch (loadError) {
+              console.warn('Error loading image data for:', src, loadError);
+              img.style.display = 'none';
+            }
           } else {
-            console.warn('Could not find image:', src, 'tried path:', imagePath);
-            // Set a placeholder or hide the image
-            img.style.display = 'none';
+            console.warn('Could not find image:', src, 'tried paths:', uniquePaths);
+            // Create a visible placeholder
+            const placeholder = document.createElement('img');
+            placeholder.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YwZjBmMCIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1kYXNoYXJyYXk9IjUsMTAiLz48dGV4dCB4PSIxMDAiIHk9IjU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM2NjYiPkltYWdlIE5vdCBGb3VuZDwvdGV4dD48L3N2Zz4=';
+            placeholder.style.maxWidth = '200px';
+            placeholder.style.margin = '10px auto';
+            placeholder.style.display = 'block';
+            img.parentNode.replaceChild(placeholder, img);
           }
         } catch (error) {
-          console.warn('Error loading image:', src, error);
+          console.warn('Error processing image:', src, error);
           img.style.display = 'none';
         }
       }
@@ -332,6 +440,23 @@ const EPUBReader = () => {
     setShowFloatingMenu(false);
   };
 
+  // Re-process images after content is rendered (React safety)
+  useEffect(() => {
+    if (contentRef.current && content) {
+      const images = contentRef.current.querySelectorAll('img[data-loaded="true"]');
+      images.forEach(img => {
+        const dataSrc = img.getAttribute('data-src');
+        if (dataSrc && (!img.src || img.src !== dataSrc)) {
+          img.src = dataSrc;
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.display = 'block';
+          img.style.margin = '10px auto';
+        }
+      });
+    }
+  }, [content, currentChapter]);
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyPress = (e) => {
@@ -375,7 +500,450 @@ const EPUBReader = () => {
       style={themeVars}
       data-theme={darkMode ? 'dark' : 'light'}
     >
+      <style>{`
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
 
+        .epub-reader {
+          min-height: 100vh;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          transition: all 0.3s ease;
+        }
+
+        .gradient-bg {
+          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+          color: white;
+        }
+
+        .home-screen {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        }
+
+        .upload-card {
+          background: var(--bg-secondary);
+          border-radius: 20px;
+          padding: 60px;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+          text-align: center;
+          max-width: 500px;
+          width: 90%;
+        }
+
+        .upload-icon {
+          width: 80px;
+          height: 80px;
+          margin: 0 auto 30px;
+          opacity: 0.8;
+        }
+
+        .upload-title {
+          font-size: 32px;
+          font-weight: 700;
+          margin-bottom: 15px;
+          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .upload-button {
+          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+          color: white;
+          border: none;
+          border-radius: 12px;
+          padding: 15px 40px;
+          font-size: 18px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          margin-top: 20px;
+        }
+
+        .upload-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .reader-container {
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          overflow: hidden;
+        }
+
+        .header {
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border-color);
+          padding: 15px 20px;
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          flex-wrap: wrap;
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          flex: 1;
+        }
+
+        .back-button {
+          background: transparent;
+          border: none;
+          color: var(--text-primary);
+          cursor: pointer;
+          padding: 8px;
+          border-radius: 8px;
+          transition: all 0.2s;
+        }
+
+        .back-button:hover {
+          background: var(--bg-tertiary);
+        }
+
+        .book-info {
+          flex: 1;
+        }
+
+        .book-title {
+          font-size: 20px;
+          font-weight: 700;
+          margin-bottom: 4px;
+        }
+
+        .book-author {
+          font-size: 14px;
+          color: var(--text-secondary);
+        }
+
+        .header-controls {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .search-container {
+          position: relative;
+          width: 300px;
+        }
+
+        .search-input {
+          width: 100%;
+          padding: 10px 40px 10px 15px;
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          font-size: 14px;
+          transition: all 0.2s;
+        }
+
+        .search-input:focus {
+          outline: none;
+          border-color: var(--gradient-start);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .search-icon {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-secondary);
+          pointer-events: none;
+        }
+
+        .icon-button {
+          background: transparent;
+          border: none;
+          color: var(--text-primary);
+          cursor: pointer;
+          padding: 10px;
+          border-radius: 10px;
+          transition: all 0.2s;
+        }
+
+        .icon-button:hover {
+          background: var(--bg-tertiary);
+        }
+
+        .content-area {
+          flex: 1;
+          display: flex;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .chapter-content {
+          flex: 1;
+          padding: 40px;
+          overflow-y: auto;
+          line-height: 1.8;
+          font-size: 18px;
+          max-width: 800px;
+          margin: 0 auto;
+          width: 100%;
+        }
+
+        .chapter-content h1 {
+          font-size: 32px;
+          margin-bottom: 30px;
+          color: var(--gradient-start);
+        }
+
+        .chapter-content p {
+          margin-bottom: 20px;
+          text-align: justify;
+        }
+
+        .search-highlight {
+          background: #ffd700;
+          color: #000;
+          padding: 2px 4px;
+          border-radius: 3px;
+          animation: highlight-pulse 0.5s ease;
+        }
+
+        @keyframes highlight-pulse {
+          0% { background: #fff59d; }
+          50% { background: #ffd700; }
+          100% { background: #ffd700; }
+        }
+
+        .search-results {
+          position: absolute;
+          top: 0;
+          right: 0;
+          width: 350px;
+          height: 100%;
+          background: var(--bg-secondary);
+          border-left: 1px solid var(--border-color);
+          overflow-y: auto;
+          padding: 20px;
+          z-index: 10;
+          transform: translateX(100%);
+          transition: transform 0.3s ease;
+        }
+
+        .search-results.active {
+          transform: translateX(0);
+        }
+
+        .search-results-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+
+        .search-results-title {
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        .search-result-item {
+          background: var(--bg-primary);
+          border-radius: 10px;
+          padding: 15px;
+          margin-bottom: 10px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .search-result-item:hover {
+          transform: translateX(-5px);
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-result-chapter {
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-bottom: 5px;
+        }
+
+        .search-result-context {
+          font-size: 14px;
+          line-height: 1.5;
+        }
+
+        .navigation-bar {
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border-color);
+          padding: 15px 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+        }
+
+        .nav-button {
+          background: var(--bg-tertiary);
+          border: none;
+          color: var(--text-primary);
+          padding: 10px 20px;
+          border-radius: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .nav-button:hover:not(:disabled) {
+          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+          color: white;
+        }
+
+        .nav-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .chapter-selector {
+          flex: 1;
+          max-width: 400px;
+        }
+
+        .chapter-select {
+          width: 100%;
+          padding: 10px 15px;
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          font-size: 14px;
+          cursor: pointer;
+        }
+
+        .reading-mode {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: var(--bg-primary);
+          z-index: 100;
+          display: flex;
+        }
+
+        .reading-mode-content {
+          flex: 1;
+          padding: 60px 40px;
+          overflow-y: auto;
+          max-width: 900px;
+          margin: 0 auto;
+          font-size: 20px;
+          line-height: 1.8;
+        }
+
+        .reading-nav-area {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 100px;
+          cursor: pointer;
+          background: transparent;
+          border: none;
+          opacity: 0;
+          transition: opacity 0.2s;
+        }
+
+        .reading-nav-area:hover {
+          opacity: 1;
+        }
+
+        .reading-nav-area.prev {
+          left: 0;
+          background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
+        }
+
+        .reading-nav-area.next {
+          right: 0;
+          background: linear-gradient(to left, rgba(0,0,0,0.1), transparent);
+        }
+
+        .floating-menu {
+          position: fixed;
+          bottom: 30px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: var(--bg-secondary);
+          border-radius: 20px;
+          padding: 15px 20px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          z-index: 101;
+          opacity: 0;
+          pointer-events: none;
+          transition: all 0.3s ease;
+        }
+
+        .floating-menu.show {
+          opacity: 1;
+          pointer-events: auto;
+        }
+
+        .menu-trigger {
+          position: fixed;
+          bottom: 30px;
+          right: 30px;
+          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+          color: white;
+          border: none;
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+          transition: all 0.3s ease;
+          z-index: 101;
+        }
+
+        .menu-trigger:hover {
+          transform: scale(1.1);
+        }
+
+        @media (max-width: 768px) {
+          .header {
+            padding: 10px 15px;
+          }
+
+          .search-container {
+            width: 100%;
+            order: 3;
+          }
+
+          .chapter-content {
+            padding: 20px;
+            font-size: 16px;
+          }
+
+          .search-results {
+            width: 100%;
+          }
+
+          .upload-card {
+            padding: 40px 30px;
+          }
+        }
+      `}</style>
 
       {!epub ? (
         <div className="home-screen">
