@@ -18,122 +18,181 @@ const EPUBReader = () => {
   const contentRef = useRef(null);
   const searchInputRef = useRef(null);
 
-// Parse EPUB file
-const parseEPUB = async (file) => {
-  try {
-    // Load the EPUB file as a zip
-    const zip = await JSZip.loadAsync(file);
-    
-    // Read container.xml to find the OPF file
-    const containerXml = await zip.file('META-INF/container.xml').async('string');
-    const parser = new DOMParser();
-    const containerDoc = parser.parseFromString(containerXml, 'text/xml');
-    
-    // Get the OPF file path
-    const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
-    const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/'));
-    
-    // Read and parse the OPF file
-    const opfXml = await zip.file(opfPath).async('string');
-    const opfDoc = parser.parseFromString(opfXml, 'text/xml');
-    
-    // Extract metadata
-    const title = opfDoc.querySelector('metadata title')?.textContent || 'Unknown Title';
-    const author = opfDoc.querySelector('metadata creator')?.textContent || 'Unknown Author';
-    const description = opfDoc.querySelector('metadata description')?.textContent || '';
-    
-    setMetadata({ title, author, description });
-    
-    // Get the spine (reading order)
-    const spine = opfDoc.querySelectorAll('spine itemref');
-    const manifest = opfDoc.querySelectorAll('manifest item');
-    
-    // Create a map of manifest items
-    const manifestMap = {};
-    manifest.forEach(item => {
-      manifestMap[item.getAttribute('id')] = {
-        href: item.getAttribute('href'),
-        type: item.getAttribute('media-type')
-      };
-    });
-    
-    // Load chapters based on spine order
-    const loadedChapters = [];
-    
-    for (const itemRef of spine) {
-      const idref = itemRef.getAttribute('idref');
-      const manifestItem = manifestMap[idref];
-      
-      if (manifestItem && manifestItem.type === 'application/xhtml+xml') {
-        const chapterPath = opfDir ? `${opfDir}/${manifestItem.href}` : manifestItem.href;
-        const chapterContent = await zip.file(chapterPath).async('string');
-        
-        // Parse the chapter HTML to extract title
-        const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
-        const chapterTitle = chapterDoc.querySelector('title')?.textContent || 
-                           chapterDoc.querySelector('h1')?.textContent || 
-                           `Chapter ${loadedChapters.length + 1}`;
-        
-        // Extract body content
-        const bodyContent = chapterDoc.querySelector('body')?.innerHTML || chapterContent;
-        
-        // Process images and styles if needed
-        const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
-        
-        loadedChapters.push({
-          title: chapterTitle.trim(),
-          content: processedContent
-        });
-      }
-    }
-    
-    if (loadedChapters.length === 0) {
-      throw new Error('No chapters found in EPUB');
-    }
-    
-    setChapters(loadedChapters);
-    setContent(loadedChapters[0].content);
-    setCurrentChapter(0);
-    setEpub(file);
-    
-  } catch (error) {
-    console.error('Error parsing EPUB:', error);
-    alert('Error loading EPUB file: ' + error.message);
-  }
-};
+  // Helper function to get proper MIME type for images
+  const getImageMimeType = (imagePath) => {
+    const extension = imagePath.split('.').pop().toLowerCase();
+    const mimeTypes = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'svg': 'image/svg+xml',
+      'webp': 'image/webp',
+      'bmp': 'image/bmp'
+    };
+    return mimeTypes[extension] || 'image/jpeg';
+  };
 
-// Helper function to process chapter content (handle images, relative paths, etc.)
-const processChapterContent = async (content, chapterPath, zip, opfDir) => {
-  // Create a temporary div to manipulate the HTML
-  const div = document.createElement('div');
-  div.innerHTML = content;
-  
-  // Process images
-  const images = div.querySelectorAll('img');
-  for (const img of images) {
-    const src = img.getAttribute('src');
-    if (src && !src.startsWith('http')) {
-      try {
-        // Calculate the correct path for the image
-        const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
-        const imagePath = chapterDir ? `${chapterDir}/${src}` : src;
-        
-        // Load the image from the zip
-        const imageData = await zip.file(imagePath).async('base64');
-        const imageType = imagePath.split('.').pop().toLowerCase();
-        img.src = `data:image/${imageType};base64,${imageData}`;
-      } catch (error) {
-        console.warn('Could not load image:', src);
+  // Helper function to process chapter content (handle images, relative paths, etc.)
+  const processChapterContent = async (content, chapterPath, zip, opfDir) => {
+    // Create a temporary div to manipulate the HTML
+    const div = document.createElement('div');
+    div.innerHTML = content;
+    
+    // Process images
+    const images = div.querySelectorAll('img');
+    for (const img of images) {
+      const src = img.getAttribute('src');
+      if (src && !src.startsWith('http')) {
+        try {
+          // Calculate the correct path for the image - handle different path scenarios
+          let imagePath;
+          
+          if (src.startsWith('../')) {
+            // Handle relative paths that go up directories
+            const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
+            const parentDir = chapterDir.substring(0, chapterDir.lastIndexOf('/'));
+            imagePath = `${parentDir}/${src.substring(3)}`;
+          } else if (src.startsWith('./')) {
+            // Handle current directory relative paths
+            const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
+            imagePath = `${chapterDir}/${src.substring(2)}`;
+          } else if (src.startsWith('/')) {
+            // Handle absolute paths from root
+            imagePath = opfDir ? `${opfDir}${src}` : src.substring(1);
+          } else {
+            // Handle relative paths without prefix
+            const chapterDir = chapterPath.substring(0, chapterPath.lastIndexOf('/'));
+            imagePath = chapterDir ? `${chapterDir}/${src}` : src;
+          }
+          
+          // Try to find the image file (case-insensitive search)
+          let imageFile = zip.file(imagePath);
+          if (!imageFile) {
+            // Try different variations if the exact path doesn't work
+            const pathVariations = [
+              imagePath,
+              imagePath.toLowerCase(),
+              imagePath.replace(/\\/g, '/'),
+              `images/${src}`,
+              `Images/${src}`,
+              `OEBPS/images/${src}`,
+              `OEBPS/Images/${src}`
+            ];
+            
+            for (const variation of pathVariations) {
+              imageFile = zip.file(variation);
+              if (imageFile) break;
+            }
+          }
+          
+          if (imageFile) {
+            // Load the image from the zip
+            const imageData = await imageFile.async('base64');
+            const imageType = getImageMimeType(imagePath);
+            img.src = `data:${imageType};base64,${imageData}`;
+          } else {
+            console.warn('Could not find image:', src, 'tried path:', imagePath);
+            // Set a placeholder or hide the image
+            img.style.display = 'none';
+          }
+        } catch (error) {
+          console.warn('Error loading image:', src, error);
+          img.style.display = 'none';
+        }
       }
     }
-  }
-  
-  // Remove any script tags for security
-  const scripts = div.querySelectorAll('script');
-  scripts.forEach(script => script.remove());
-  
-  return div.innerHTML;
-};
+    
+    // Remove any script tags for security
+    const scripts = div.querySelectorAll('script');
+    scripts.forEach(script => script.remove());
+    
+    return div.innerHTML;
+  };
+
+  // Parse EPUB file
+  const parseEPUB = async (file) => {
+    try {
+      // Load the EPUB file as a zip
+      const zip = await JSZip.loadAsync(file);
+      
+      // Read container.xml to find the OPF file
+      const containerXml = await zip.file('META-INF/container.xml').async('string');
+      const parser = new DOMParser();
+      const containerDoc = parser.parseFromString(containerXml, 'text/xml');
+      
+      // Get the OPF file path
+      const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+      const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/'));
+      
+      // Read and parse the OPF file
+      const opfXml = await zip.file(opfPath).async('string');
+      const opfDoc = parser.parseFromString(opfXml, 'text/xml');
+      
+      // Extract metadata
+      const title = opfDoc.querySelector('metadata title')?.textContent || 'Unknown Title';
+      const author = opfDoc.querySelector('metadata creator')?.textContent || 'Unknown Author';
+      const description = opfDoc.querySelector('metadata description')?.textContent || '';
+      
+      setMetadata({ title, author, description });
+      
+      // Get the spine (reading order)
+      const spine = opfDoc.querySelectorAll('spine itemref');
+      const manifest = opfDoc.querySelectorAll('manifest item');
+      
+      // Create a map of manifest items
+      const manifestMap = {};
+      manifest.forEach(item => {
+        manifestMap[item.getAttribute('id')] = {
+          href: item.getAttribute('href'),
+          type: item.getAttribute('media-type')
+        };
+      });
+      
+      // Load chapters based on spine order
+      const loadedChapters = [];
+      
+      for (const itemRef of spine) {
+        const idref = itemRef.getAttribute('idref');
+        const manifestItem = manifestMap[idref];
+        
+        if (manifestItem && manifestItem.type === 'application/xhtml+xml') {
+          const chapterPath = opfDir ? `${opfDir}/${manifestItem.href}` : manifestItem.href;
+          const chapterContent = await zip.file(chapterPath).async('string');
+          
+          // Parse the chapter HTML to extract title
+          const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
+          const chapterTitle = chapterDoc.querySelector('title')?.textContent || 
+                             chapterDoc.querySelector('h1')?.textContent || 
+                             `Chapter ${loadedChapters.length + 1}`;
+          
+          // Extract body content
+          const bodyContent = chapterDoc.querySelector('body')?.innerHTML || chapterContent;
+          
+          // Process images and styles if needed
+          const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
+          
+          loadedChapters.push({
+            title: chapterTitle.trim(),
+            content: processedContent
+          });
+        }
+      }
+      
+      if (loadedChapters.length === 0) {
+        throw new Error('No chapters found in EPUB');
+      }
+      
+      setChapters(loadedChapters);
+      setContent(loadedChapters[0].content);
+      setCurrentChapter(0);
+      setEpub(file);
+      
+    } catch (error) {
+      console.error('Error parsing EPUB:', error);
+      alert('Error loading EPUB file: ' + error.message);
+    }
+  };
 
   // Handle file selection
   const handleFileSelect = (e) => {
@@ -164,21 +223,35 @@ const processChapterContent = async (content, chapterPath, zip, opfDir) => {
 
     const results = [];
     chapters.forEach((chapter, chapterIndex) => {
-      const text = chapter.content.replace(/<[^>]*>/g, '');
-      const regex = new RegExp(searchQuery, 'gi');
+      // Create a temporary div to extract text content properly
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = chapter.content;
+      const text = tempDiv.textContent || tempDiv.innerText || '';
+      
+      const regex = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
       let match;
       
       while ((match = regex.exec(text)) !== null) {
         const start = Math.max(0, match.index - 50);
         const end = Math.min(text.length, match.index + searchQuery.length + 50);
-        const context = text.substring(start, end);
+        let context = text.substring(start, end);
+        
+        // Add ellipsis if context is trimmed
+        if (start > 0) context = '...' + context;
+        if (end < text.length) context = context + '...';
         
         results.push({
           chapterIndex,
           chapterTitle: chapter.title,
           context: context,
-          matchIndex: match.index
+          matchIndex: match.index,
+          matchText: match[0]
         });
+        
+        // Prevent infinite loops
+        if (match.index === regex.lastIndex) {
+          regex.lastIndex++;
+        }
       }
     });
 
@@ -195,22 +268,42 @@ const processChapterContent = async (content, chapterPath, zip, opfDir) => {
 
   // Navigate to search result
   const goToSearchResult = (result) => {
-    goToChapter(result.chapterIndex);
+    setCurrentChapter(result.chapterIndex);
+    setContent(chapters[result.chapterIndex].content);
+    setIsSearching(false);
+    
+    // Scroll to top first
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+    
+    // Highlight the text after a short delay to ensure content is rendered
     setTimeout(() => {
-      highlightText(searchQuery);
-    }, 100);
+      highlightSearchText(searchQuery, result.chapterIndex);
+    }, 200);
   };
 
   // Highlight search text
-  const highlightText = (text) => {
-    if (!contentRef.current || !text) return;
+  const highlightSearchText = (text, chapterIndex = currentChapter) => {
+    if (!text || !chapters[chapterIndex]) return;
     
-    const content = chapters[currentChapter].content;
-    const highlighted = content.replace(
-      new RegExp(`(${text})`, 'gi'),
-      '<mark class="search-highlight">$1</mark>'
-    );
+    const originalContent = chapters[chapterIndex].content;
+    const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedText})`, 'gi');
+    
+    const highlighted = originalContent.replace(regex, '<mark class="search-highlight">$1</mark>');
     setContent(highlighted);
+    
+    // Scroll to the first highlight
+    setTimeout(() => {
+      const firstHighlight = contentRef.current?.querySelector('.search-highlight');
+      if (firstHighlight) {
+        firstHighlight.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+      }
+    }, 100);
   };
 
   // Clear search
@@ -218,8 +311,13 @@ const processChapterContent = async (content, chapterPath, zip, opfDir) => {
     setSearchQuery('');
     setSearchResults([]);
     setIsSearching(false);
+    // Restore original content without highlights
     if (chapters[currentChapter]) {
       setContent(chapters[currentChapter].content);
+    }
+    // Clear the search input
+    if (searchInputRef.current) {
+      searchInputRef.current.blur();
     }
   };
 
@@ -818,8 +916,16 @@ const processChapterContent = async (content, chapterPath, zip, opfDir) => {
                   className="search-input"
                   placeholder="Search in book..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsSearching(true)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (e.target.value.trim()) {
+                      setIsSearching(true);
+                    } else {
+                      setIsSearching(false);
+                      setSearchResults([]);
+                    }
+                  }}
+                  onFocus={() => searchQuery.trim() && setIsSearching(true)}
                 />
                 <Search className="search-icon" size={18} />
               </div>
