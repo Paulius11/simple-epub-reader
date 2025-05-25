@@ -2,9 +2,13 @@
 
 A modern, web-based EPUB reader built with React. Features a clean interface, dark/light themes, full-text search, and distraction-free reading mode.
 
-## 🚀 Live Demo
+**GitHub Description:** *Web-based EPUB reader with search, themes, and distraction-free mode*
 
-[https://paulius11.github.io/simple-epub-reader](https://paulius11.github.io/simple-epub-reader)
+## 🚀 Quick Links
+
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Visit_Site-blue?style=for-the-badge&logo=vercel)](https://paulius11.github.io/simple-epub-reader)
+[![GitHub Repository](https://img.shields.io/badge/📂_GitHub-View_Code-black?style=for-the-badge&logo=github)](https://github.com/Paulius11/simple-epub-reader)
+[![GitHub Stars](https://img.shields.io/github/stars/Paulius11/simple-epub-reader?style=for-the-badge&logo=github)](https://github.com/Paulius11/simple-epub-reader/stargazers)
 
 ## ✨ Features
 
@@ -34,15 +38,27 @@ npm install
 npm start
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+## 📦 Deployment & Updates
 
-## 📦 Deployment
-
-To deploy to GitHub Pages:
-
+### Deploy to GitHub Pages:
 ```bash
 npm run deploy
 ```
+
+### Update GitHub Pages (after making changes):
+1. Make your changes
+2. Commit and push to main branch:
+```bash
+git add .
+git commit -m "Your update message"
+git push
+```
+3. Deploy the updates:
+```bash
+npm run deploy
+```
+
+The site will update automatically at https://paulius11.github.io/simple-epub-reader
 
 ## 🔧 Technologies Used
 
@@ -83,4 +99,4 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
-⭐ If you find this project useful, please consider giving it a star!
+⭐ If you find this project useful, please consider giving it a star on GitHub!
