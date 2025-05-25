@@ -2,6 +2,40 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Search, Moon, Sun, Book, X, Menu, Home } from 'lucide-react';
 import JSZip from 'jszip';
 
+// Component to render highlighted search results
+const HighlightedText = ({ text, searchQuery }) => {
+  if (!searchQuery || !text) return <span>{text}</span>;
+  
+  const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedQuery})`, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <span>
+      {parts.map((part, index) => {
+        // Check if this part matches the search query (case insensitive)
+        const isMatch = part.toLowerCase() === searchQuery.toLowerCase();
+        return isMatch ? (
+          <mark 
+            key={index} 
+            style={{ 
+              background: '#ffd700', 
+              color: '#000', 
+              padding: '1px 3px', 
+              borderRadius: '3px',
+              fontWeight: '500'
+            }}
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        );
+      })}
+    </span>
+  );
+};
+
 const EPUBReader = () => {
   const [epub, setEpub] = useState(null);
   const [currentChapter, setCurrentChapter] = useState(0);
@@ -324,13 +358,19 @@ const EPUBReader = () => {
 
   // Search functionality
   const performSearch = useCallback(() => {
-    if (!searchQuery.trim() || !chapters.length) {
+    // Require minimum 2 characters to prevent crashes with single letters
+    if (!searchQuery.trim() || searchQuery.trim().length < 2 || !chapters.length) {
       setSearchResults([]);
       return;
     }
 
     const results = [];
+    const maxResultsPerChapter = 5; // Limit results per chapter to prevent crashes
+    const maxTotalResults = 50; // Overall limit
+    
     chapters.forEach((chapter, chapterIndex) => {
+      if (results.length >= maxTotalResults) return;
+      
       // Create a temporary div to extract text content properly
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = chapter.content;
@@ -338,8 +378,9 @@ const EPUBReader = () => {
       
       const regex = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
       let match;
+      let chapterResults = 0;
       
-      while ((match = regex.exec(text)) !== null) {
+      while ((match = regex.exec(text)) !== null && chapterResults < maxResultsPerChapter) {
         const start = Math.max(0, match.index - 50);
         const end = Math.min(text.length, match.index + searchQuery.length + 50);
         let context = text.substring(start, end);
@@ -356,6 +397,8 @@ const EPUBReader = () => {
           matchText: match[0]
         });
         
+        chapterResults++;
+        
         // Prevent infinite loops
         if (match.index === regex.lastIndex) {
           regex.lastIndex++;
@@ -367,9 +410,10 @@ const EPUBReader = () => {
   }, [searchQuery, chapters]);
 
   useEffect(() => {
+    // Increase debounce time and add minimum character requirement
     const debounceTimer = setTimeout(() => {
       performSearch();
-    }, 300);
+    }, 500); // Increased from 300ms to 500ms
 
     return () => clearTimeout(debounceTimer);
   }, [searchQuery, performSearch]);
@@ -500,450 +544,6 @@ const EPUBReader = () => {
       style={themeVars}
       data-theme={darkMode ? 'dark' : 'light'}
     >
-      <style>{`
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-
-        .epub-reader {
-          min-height: 100vh;
-          background: var(--bg-primary);
-          color: var(--text-primary);
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          transition: all 0.3s ease;
-        }
-
-        .gradient-bg {
-          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-          color: white;
-        }
-
-        .home-screen {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 100vh;
-          background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
-        }
-
-        .upload-card {
-          background: var(--bg-secondary);
-          border-radius: 20px;
-          padding: 60px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-          text-align: center;
-          max-width: 500px;
-          width: 90%;
-        }
-
-        .upload-icon {
-          width: 80px;
-          height: 80px;
-          margin: 0 auto 30px;
-          opacity: 0.8;
-        }
-
-        .upload-title {
-          font-size: 32px;
-          font-weight: 700;
-          margin-bottom: 15px;
-          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .upload-button {
-          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-          color: white;
-          border: none;
-          border-radius: 12px;
-          padding: 15px 40px;
-          font-size: 18px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          margin-top: 20px;
-        }
-
-        .upload-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
-        }
-
-        .reader-container {
-          display: flex;
-          flex-direction: column;
-          height: 100vh;
-          overflow: hidden;
-        }
-
-        .header {
-          background: var(--bg-secondary);
-          border-bottom: 1px solid var(--border-color);
-          padding: 15px 20px;
-          display: flex;
-          align-items: center;
-          gap: 20px;
-          flex-wrap: wrap;
-        }
-
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          flex: 1;
-        }
-
-        .back-button {
-          background: transparent;
-          border: none;
-          color: var(--text-primary);
-          cursor: pointer;
-          padding: 8px;
-          border-radius: 8px;
-          transition: all 0.2s;
-        }
-
-        .back-button:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .book-info {
-          flex: 1;
-        }
-
-        .book-title {
-          font-size: 20px;
-          font-weight: 700;
-          margin-bottom: 4px;
-        }
-
-        .book-author {
-          font-size: 14px;
-          color: var(--text-secondary);
-        }
-
-        .header-controls {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-        }
-
-        .search-container {
-          position: relative;
-          width: 300px;
-        }
-
-        .search-input {
-          width: 100%;
-          padding: 10px 40px 10px 15px;
-          border: 1px solid var(--border-color);
-          border-radius: 10px;
-          background: var(--bg-primary);
-          color: var(--text-primary);
-          font-size: 14px;
-          transition: all 0.2s;
-        }
-
-        .search-input:focus {
-          outline: none;
-          border-color: var(--gradient-start);
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        .search-icon {
-          position: absolute;
-          right: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: var(--text-secondary);
-          pointer-events: none;
-        }
-
-        .icon-button {
-          background: transparent;
-          border: none;
-          color: var(--text-primary);
-          cursor: pointer;
-          padding: 10px;
-          border-radius: 10px;
-          transition: all 0.2s;
-        }
-
-        .icon-button:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .content-area {
-          flex: 1;
-          display: flex;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .chapter-content {
-          flex: 1;
-          padding: 40px;
-          overflow-y: auto;
-          line-height: 1.8;
-          font-size: 18px;
-          max-width: 800px;
-          margin: 0 auto;
-          width: 100%;
-        }
-
-        .chapter-content h1 {
-          font-size: 32px;
-          margin-bottom: 30px;
-          color: var(--gradient-start);
-        }
-
-        .chapter-content p {
-          margin-bottom: 20px;
-          text-align: justify;
-        }
-
-        .search-highlight {
-          background: #ffd700;
-          color: #000;
-          padding: 2px 4px;
-          border-radius: 3px;
-          animation: highlight-pulse 0.5s ease;
-        }
-
-        @keyframes highlight-pulse {
-          0% { background: #fff59d; }
-          50% { background: #ffd700; }
-          100% { background: #ffd700; }
-        }
-
-        .search-results {
-          position: absolute;
-          top: 0;
-          right: 0;
-          width: 350px;
-          height: 100%;
-          background: var(--bg-secondary);
-          border-left: 1px solid var(--border-color);
-          overflow-y: auto;
-          padding: 20px;
-          z-index: 10;
-          transform: translateX(100%);
-          transition: transform 0.3s ease;
-        }
-
-        .search-results.active {
-          transform: translateX(0);
-        }
-
-        .search-results-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-        }
-
-        .search-results-title {
-          font-size: 18px;
-          font-weight: 600;
-        }
-
-        .search-result-item {
-          background: var(--bg-primary);
-          border-radius: 10px;
-          padding: 15px;
-          margin-bottom: 10px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .search-result-item:hover {
-          transform: translateX(-5px);
-          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .search-result-chapter {
-          font-size: 12px;
-          color: var(--text-secondary);
-          margin-bottom: 5px;
-        }
-
-        .search-result-context {
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        .navigation-bar {
-          background: var(--bg-secondary);
-          border-top: 1px solid var(--border-color);
-          padding: 15px 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-
-        .nav-button {
-          background: var(--bg-tertiary);
-          border: none;
-          color: var(--text-primary);
-          padding: 10px 20px;
-          border-radius: 10px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .nav-button:hover:not(:disabled) {
-          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-          color: white;
-        }
-
-        .nav-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .chapter-selector {
-          flex: 1;
-          max-width: 400px;
-        }
-
-        .chapter-select {
-          width: 100%;
-          padding: 10px 15px;
-          border: 1px solid var(--border-color);
-          border-radius: 10px;
-          background: var(--bg-primary);
-          color: var(--text-primary);
-          font-size: 14px;
-          cursor: pointer;
-        }
-
-        .reading-mode {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: var(--bg-primary);
-          z-index: 100;
-          display: flex;
-        }
-
-        .reading-mode-content {
-          flex: 1;
-          padding: 60px 40px;
-          overflow-y: auto;
-          max-width: 900px;
-          margin: 0 auto;
-          font-size: 20px;
-          line-height: 1.8;
-        }
-
-        .reading-nav-area {
-          position: absolute;
-          top: 0;
-          bottom: 0;
-          width: 100px;
-          cursor: pointer;
-          background: transparent;
-          border: none;
-          opacity: 0;
-          transition: opacity 0.2s;
-        }
-
-        .reading-nav-area:hover {
-          opacity: 1;
-        }
-
-        .reading-nav-area.prev {
-          left: 0;
-          background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
-        }
-
-        .reading-nav-area.next {
-          right: 0;
-          background: linear-gradient(to left, rgba(0,0,0,0.1), transparent);
-        }
-
-        .floating-menu {
-          position: fixed;
-          bottom: 30px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: var(--bg-secondary);
-          border-radius: 20px;
-          padding: 15px 20px;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          z-index: 101;
-          opacity: 0;
-          pointer-events: none;
-          transition: all 0.3s ease;
-        }
-
-        .floating-menu.show {
-          opacity: 1;
-          pointer-events: auto;
-        }
-
-        .menu-trigger {
-          position: fixed;
-          bottom: 30px;
-          right: 30px;
-          background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-          color: white;
-          border: none;
-          width: 60px;
-          height: 60px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
-          transition: all 0.3s ease;
-          z-index: 101;
-        }
-
-        .menu-trigger:hover {
-          transform: scale(1.1);
-        }
-
-        @media (max-width: 768px) {
-          .header {
-            padding: 10px 15px;
-          }
-
-          .search-container {
-            width: 100%;
-            order: 3;
-          }
-
-          .chapter-content {
-            padding: 20px;
-            font-size: 16px;
-          }
-
-          .search-results {
-            width: 100%;
-          }
-
-          .upload-card {
-            padding: 40px 30px;
-          }
-        }
-      `}</style>
 
       {!epub ? (
         <div className="home-screen">
@@ -1039,18 +639,18 @@ const EPUBReader = () => {
                   ref={searchInputRef}
                   type="text"
                   className="search-input"
-                  placeholder="Search in book..."
+                  placeholder="Search in book... (min 2 chars)"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    if (e.target.value.trim()) {
+                    if (e.target.value.trim().length >= 2) {
                       setIsSearching(true);
                     } else {
                       setIsSearching(false);
                       setSearchResults([]);
                     }
                   }}
-                  onFocus={() => searchQuery.trim() && setIsSearching(true)}
+                  onFocus={() => searchQuery.trim().length >= 2 && setIsSearching(true)}
                 />
                 <Search className="search-icon" size={18} />
               </div>
@@ -1093,7 +693,7 @@ const EPUBReader = () => {
                       {result.chapterTitle}
                     </div>
                     <div className="search-result-context">
-                      {result.context}
+                      <HighlightedText text={result.context} searchQuery={searchQuery} />
                     </div>
                   </div>
                 ))}
