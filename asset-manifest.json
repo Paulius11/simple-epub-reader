@@ -1,0 +1,10 @@
+{
+  "files": {
+    "main.js": "/simple-epub-reader/static/js/main.dd0e5a1a.js",
+    "index.html": "/simple-epub-reader/index.html",
+    "main.dd0e5a1a.js.map": "/simple-epub-reader/static/js/main.dd0e5a1a.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.dd0e5a1a.js"
+  ]
+}
