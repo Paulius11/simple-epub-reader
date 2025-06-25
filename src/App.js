@@ -291,6 +291,58 @@ const EPUBReader = () => {
         };
       });
       
+      // Extract chapter titles from TOC (NCX or navigation file)
+      const tocTitles = {};
+      
+      // Try to find and parse NCX file (EPUB 2.0)
+      const ncxItem = Array.from(manifest).find(item => item.getAttribute('media-type') === 'application/x-dtbncx+xml');
+      if (ncxItem) {
+        try {
+          const ncxPath = opfDir ? `${opfDir}/${ncxItem.getAttribute('href')}` : ncxItem.getAttribute('href');
+          const ncxContent = await zip.file(ncxPath).async('string');
+          const ncxDoc = parser.parseFromString(ncxContent, 'text/xml');
+          const navPoints = ncxDoc.querySelectorAll('navPoint');
+          
+          navPoints.forEach(navPoint => {
+            const navLabel = navPoint.querySelector('navLabel text')?.textContent;
+            const contentSrc = navPoint.querySelector('content')?.getAttribute('src');
+            if (navLabel && contentSrc) {
+              // Remove fragment identifier if present
+              const cleanSrc = contentSrc.split('#')[0];
+              tocTitles[cleanSrc] = navLabel.trim();
+            }
+          });
+        } catch (error) {
+          console.warn('Could not parse NCX file:', error);
+        }
+      }
+      
+      // Try to find and parse navigation file (EPUB 3.0)
+      const navItem = Array.from(manifest).find(item => 
+        item.getAttribute('properties')?.includes('nav') ||
+        item.getAttribute('href')?.includes('nav')
+      );
+      if (navItem && Object.keys(tocTitles).length === 0) {
+        try {
+          const navPath = opfDir ? `${opfDir}/${navItem.getAttribute('href')}` : navItem.getAttribute('href');
+          const navContent = await zip.file(navPath).async('string');
+          const navDoc = parser.parseFromString(navContent, 'text/html');
+          const navLinks = navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a');
+          
+          navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            const title = link.textContent;
+            if (href && title) {
+              // Remove fragment identifier if present
+              const cleanHref = href.split('#')[0];
+              tocTitles[cleanHref] = title.trim();
+            }
+          });
+        } catch (error) {
+          console.warn('Could not parse navigation file:', error);
+        }
+      }
+
       // Load chapters based on spine order
       const loadedChapters = [];
       
@@ -302,13 +354,25 @@ const EPUBReader = () => {
           const chapterPath = opfDir ? `${opfDir}/${manifestItem.href}` : manifestItem.href;
           const chapterContent = await zip.file(chapterPath).async('string');
           
-          // Parse the chapter HTML to extract title
-          const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
-          const chapterTitle = chapterDoc.querySelector('title')?.textContent || 
-                             chapterDoc.querySelector('h1')?.textContent || 
-                             `Chapter ${loadedChapters.length + 1}`;
+          // Try to get title from TOC first, then fallback to parsing HTML
+          let chapterTitle = tocTitles[manifestItem.href];
+          
+          if (!chapterTitle) {
+            // Parse the chapter HTML to extract title
+            const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
+            chapterTitle = chapterDoc.querySelector('title')?.textContent || 
+                          chapterDoc.querySelector('h1')?.textContent || 
+                          chapterDoc.querySelector('h2')?.textContent ||
+                          chapterDoc.querySelector('h3')?.textContent;
+          }
+          
+          // Final fallback if no title found
+          if (!chapterTitle || chapterTitle.trim() === '') {
+            chapterTitle = `Chapter ${loadedChapters.length + 1}`;
+          }
           
           // Extract body content
+          const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
           const bodyContent = chapterDoc.querySelector('body')?.innerHTML || chapterContent;
           
           // Process images and styles if needed
