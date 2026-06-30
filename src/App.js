@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { parseEpub } from './lib/epub';
 import * as storage from './lib/storage';
-import { saveEpubBlob, getEpubBlob, deleteEpubBlob, listEpubBlobKeys } from './lib/blobStore';
+import { saveEpubBlob, getEpubBlob, deleteEpubBlob } from './lib/blobStore';
 
 // Render text with the search term highlighted.
 const HighlightedText = ({ text, searchQuery }) => {
@@ -123,17 +123,8 @@ const EPUBReader = () => {
   // --- parse + load EPUB ---------------------------------------------------
 
   const parseEPUB = async (file) => {
-    console.log(
-      '[parseEPUB] ENTER',
-      file?.constructor?.name,
-      'size=' + (file?.size ?? '?'),
-      'type=' + (file?.type ?? '?')
-    );
     try {
       const { metadata: meta, chapters: loadedChapters } = await parseEpub(file);
-      console.log(
-        '[parseEPUB] parsed OK bookId="' + meta.bookId + '" chapters=' + loadedChapters.length
-      );
       setMetadata(meta);
       setChapters(loadedChapters);
       setEpub(file);
@@ -162,17 +153,8 @@ const EPUBReader = () => {
       );
 
       // Persist the file bytes so the user can reopen from the recent grid
-      // without re-picking the file.
-      console.log('[parseEPUB] about to save blob for bookId="' + meta.bookId + '"');
-      const saved = await saveEpubBlob(meta.bookId, file);
-      console.log('[parseEPUB] save result: ' + saved);
-      if (!saved) {
-        console.warn(
-          'EPUB blob not cached (bookId=' +
-            meta.bookId +
-            '). Re-opening from "recent" will require re-picking the file.'
-        );
-      }
+      // without re-picking the file. Fire-and-forget; failure is non-fatal.
+      saveEpubBlob(meta.bookId, file);
     } catch (error) {
       console.error('Error parsing EPUB:', error);
       alert('Error loading EPUB file: ' + error.message);
@@ -443,37 +425,13 @@ const EPUBReader = () => {
   };
 
   const openRecentBook = async (book) => {
-    console.log(`[openRecentBook] CLICK bookId="${book.bookId}" title="${book.title}"`);
-    let blob;
-    try {
-      blob = await getEpubBlob(book.bookId);
-      console.log(
-        `[openRecentBook] getEpubBlob resolved →`,
-        blob
-          ? { found: true, size: blob.size, type: blob.type, constructor: blob.constructor?.name }
-          : { found: false }
-      );
-    } catch (err) {
-      console.error('[openRecentBook] getEpubBlob threw:', err);
-      blob = null;
-    }
-
+    const blob = await getEpubBlob(book.bookId).catch(() => null);
     if (blob) {
-      try {
-        await parseEPUB(blob);
-        console.log('[openRecentBook] parseEPUB completed');
-      } catch (err) {
-        console.error('[openRecentBook] parseEPUB threw:', err);
-      }
+      parseEPUB(blob);
       return;
     }
-
-    // No blob cached — show what IS in the store so key mismatches are visible.
-    const presentKeys = await listEpubBlobKeys();
-    console.warn(
-      `[openRecentBook] MISS for bookId="${book.bookId}". ` +
-        `IDB store keys=[${presentKeys.join(', ')}]. Opening file picker.`
-    );
+    // No blob cached for this book — likely added to "recent" before blob
+    // storage existed, or evicted. Open the picker so the user can re-select.
     fileInputRef.current?.click();
   };
 
