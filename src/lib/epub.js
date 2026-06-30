@@ -173,6 +173,47 @@ const parseTocFromNcx = async (ncxFile, parser) => {
   return tocTitles;
 };
 
+// Fast non-crypto hash for fallback bookId. Good enough to disambiguate files;
+// not for security. Returns base-36 string.
+const simpleHash = (str) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+};
+
+const countWords = (html) => {
+  if (!html) return 0;
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ');
+  const matches = text.match(/\S+/g);
+  return matches ? matches.length : 0;
+};
+
+// Look up the cover image href (if any) declared via the EPUB2 convention:
+//   <meta name="cover" content="<manifest-id>"/>
+// or the EPUB3 convention: <item properties="cover-image"/> in the manifest.
+const findCoverHref = (metadataEl, manifestItems) => {
+  // EPUB3
+  for (const item of manifestItems) {
+    const props = item.getAttribute('properties') || '';
+    if (props.split(/\s+/).includes('cover-image')) {
+      return { href: item.getAttribute('href'), type: item.getAttribute('media-type') };
+    }
+  }
+  // EPUB2
+  const metaTags = metadataEl.getElementsByTagNameNS('*', 'meta');
+  for (const m of metaTags) {
+    if ((m.getAttribute('name') || '').toLowerCase() === 'cover') {
+      const id = m.getAttribute('content');
+      const item = Array.from(manifestItems).find((i) => i.getAttribute('id') === id);
+      if (item) return { href: item.getAttribute('href'), type: item.getAttribute('media-type') };
+    }
+  }
+  return null;
+};
+
 const parseTocFromNav = async (navFile, parser) => {
   const tocTitles = {};
   const navContent = await navFile.async('string');
@@ -223,10 +264,17 @@ export async function parseEpub(file) {
   const metadataEl = opfDoc.getElementsByTagNameNS('*', 'metadata')[0] || opfDoc.documentElement;
   const readMeta = (localName) =>
     metadataEl.getElementsByTagNameNS('*', localName)[0]?.textContent?.trim() || '';
+  // dc:identifier is required by the EPUB spec and is the most stable per-book
+  // key we can get. Falls back to a hash of the OPF bytes if missing/malformed.
+  const dcIdentifier = readMeta('identifier');
+  const bookId = dcIdentifier || `epub:hash:${simpleHash(opfXml)}`;
+
   const metadata = {
     title: readMeta('title') || 'Unknown Title',
     author: readMeta('creator') || 'Unknown Author',
     description: readMeta('description'),
+    bookId,
+    cover: null, // filled in below if present
   };
 
   const spine = opfDoc.querySelectorAll('spine itemref');
@@ -239,6 +287,22 @@ export async function parseEpub(file) {
       type: item.getAttribute('media-type'),
     };
   });
+
+  // Cover image (EPUB2 <meta name="cover"> or EPUB3 properties="cover-image").
+  const coverInfo = findCoverHref(metadataEl, manifest);
+  if (coverInfo?.href) {
+    try {
+      const coverPath = opfDir ? `${opfDir}/${coverInfo.href}` : coverInfo.href;
+      const coverFile = getZipFile(zip, coverPath);
+      if (coverFile) {
+        const base64 = await coverFile.async('base64');
+        const mime = coverInfo.type || getImageMimeType(coverPath);
+        metadata.cover = `data:${mime};base64,${base64}`;
+      }
+    } catch (err) {
+      console.warn('Could not load cover image:', err);
+    }
+  }
 
   // TOC: prefer NCX (EPUB2), fall back to nav doc (EPUB3).
   let tocTitles = {};
@@ -313,7 +377,12 @@ export async function parseEpub(file) {
     const bodyContent = doc.querySelector('body')?.innerHTML || chapterContent;
     const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
 
-    chapters.push({ title: chapterTitle.trim(), content: processedContent });
+    chapters.push({
+      title: chapterTitle.trim(),
+      content: processedContent,
+      wordCount: countWords(processedContent),
+      href: manifestItem.href,
+    });
   }
 
   if (chapters.length === 0) throw new Error('No chapters found in EPUB');

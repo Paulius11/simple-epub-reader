@@ -183,11 +183,12 @@
 
 .chapter-content {
     flex: 1;
-    padding: 40px;
+    padding: 40px 40px 100px;
     overflow-y: auto;
-    line-height: 1.8;
-    font-size: 18px;
-    max-width: 800px;
+    line-height: var(--reader-line-height, 1.8);
+    font-size: var(--reader-font-size, 18px);
+    font-family: var(--reader-font-family, inherit);
+    max-width: var(--reader-page-width, 800px);
     margin: 0 auto;
     width: 100%;
 }
@@ -345,12 +346,13 @@
 
 .reading-mode-content {
     flex: 1;
-    padding: 60px 40px;
+    padding: 60px 40px 100px;
     overflow-y: auto;
-    max-width: 900px;
+    max-width: var(--reader-page-width, 900px);
     margin: 0 auto;
-    font-size: 20px;
-    line-height: 1.8;
+    font-size: var(--reader-font-size, 20px);
+    line-height: var(--reader-line-height, 1.8);
+    font-family: var(--reader-font-family, inherit);
 }
 
 .reading-nav-area {
@@ -446,5 +448,553 @@
 
     .upload-card {
         padding: 40px 30px;
+    }
+}
+
+/* ============================================================ */
+/*  Progress bar                                                 */
+/* ============================================================ */
+
+.progress-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 16px 10px;
+    background: linear-gradient(to top, var(--bg-primary) 60%, transparent);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.progress-track {
+    height: 3px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+    transition: width 0.2s ease;
+}
+
+.progress-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.progress-dot {
+    opacity: 0.4;
+}
+
+.reader-container,
+.reading-mode {
+    position: relative;
+}
+
+.navigation-bar {
+    padding-bottom: 36px;
+}
+
+/* ============================================================ */
+/*  Sidebar (TOC + Bookmarks)                                    */
+/* ============================================================ */
+
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+    z-index: 50;
+}
+
+.sidebar-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 360px;
+    max-width: 88vw;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+}
+
+.sidebar.show {
+    transform: translateX(0);
+}
+
+.sidebar-tabs {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px;
+    gap: 4px;
+}
+
+.sidebar-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 500;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-tab:hover {
+    background: var(--bg-tertiary);
+}
+
+.sidebar-tab.active {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.sidebar-close {
+    margin-left: auto;
+    flex: 0 0 auto !important;
+}
+
+.sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.toc-list,
+.bookmark-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.toc-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.4;
+    transition: background 0.1s ease;
+}
+
+.toc-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.toc-item.active {
+    background: linear-gradient(90deg, var(--gradient-start) 0%, transparent 100%);
+    color: white;
+    font-weight: 600;
+}
+
+.toc-item.active .toc-index {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.toc-index {
+    flex: 0 0 28px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.toc-title {
+    flex: 1;
+}
+
+.bookmark-item {
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    margin-bottom: 6px;
+    transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.bookmark-item:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+}
+
+.bookmark-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.bookmark-chapter {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bookmark-delete {
+    opacity: 0.5;
+}
+
+.bookmark-delete:hover {
+    opacity: 1;
+}
+
+.bookmark-snippet {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 4px 0 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.bookmark-meta {
+    font-size: 11px;
+}
+
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.empty-state p {
+    margin-top: 8px;
+}
+
+.empty-state kbd {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.muted {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+/* ============================================================ */
+/*  Font / typography panel                                       */
+/* ============================================================ */
+
+.font-button-wrap {
+    position: relative;
+}
+
+.font-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 280px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    z-index: 40;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+}
+
+.font-panel.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.font-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.font-row label {
+    flex: 0 0 80px;
+}
+
+.font-row input[type='range'] {
+    flex: 1;
+    accent-color: var(--gradient-start);
+}
+
+.font-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.font-stepper button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.font-stepper button:hover {
+    background: var(--bg-secondary);
+}
+
+.font-value {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--text-primary);
+    min-width: 44px;
+    text-align: right;
+}
+
+.font-family-group {
+    display: inline-flex;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.font-family-group button {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    text-transform: capitalize;
+}
+
+.font-family-group button.active {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================ */
+/*  Home screen — recent books grid                              */
+/* ============================================================ */
+
+.home-screen {
+    align-items: flex-start;
+    padding: 60px 20px;
+    overflow-y: auto;
+}
+
+.home-inner {
+    width: 100%;
+    max-width: 960px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 48px;
+}
+
+.recent-section {
+    width: 100%;
+}
+
+.recent-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+}
+
+.recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 18px;
+}
+
+.recent-card {
+    position: relative;
+    cursor: pointer;
+    border-radius: 10px;
+    padding: 8px;
+    transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.recent-card:hover {
+    background: var(--bg-secondary);
+    transform: translateY(-2px);
+}
+
+.recent-card:hover .recent-card-remove {
+    opacity: 1;
+}
+
+.recent-cover {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    margin-bottom: 10px;
+}
+
+.recent-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.recent-cover-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white;
+    opacity: 0.85;
+}
+
+.recent-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    margin-bottom: 2px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.recent-card-author {
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recent-card-meta {
+    font-size: 10px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+.recent-card-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.recent-hint {
+    margin-top: 14px;
+    text-align: center;
+}
+
+/* ============================================================ */
+/*  Inline search highlight (for search results panel)           */
+/* ============================================================ */
+
+.inline-highlight {
+    background: #ffd700;
+    color: #000;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+/* ============================================================ */
+/*  Reading-mode adjustments for new chrome                      */
+/* ============================================================ */
+
+.reading-mode .progress-bar {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 50%, transparent);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.reading-mode .progress-meta {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* ============================================================ */
+/*  Mobile tweaks                                                */
+/* ============================================================ */
+
+@media (max-width: 600px) {
+    .progress-meta {
+        font-size: 10px;
+        gap: 4px;
+    }
+
+    .font-panel {
+        right: -20px;
+        width: 260px;
+    }
+
+    .sidebar {
+        width: 100vw;
+        max-width: 100vw;
     }
 }
