@@ -132,19 +132,30 @@ const EPUBReader = () => {
           let imageFile = null;
           let successfulPath = '';
           
-          // Try each path variation
+          // Try each path variation (with URL-decoded fallback)
+          const tryLookup = (p) => {
+            if (!p) return null;
+            let f = zip.file(p);
+            if (f) return f;
+            try {
+              const decoded = decodeURIComponent(p);
+              if (decoded !== p) f = zip.file(decoded);
+            } catch (_) { /* ignore malformed URI */ }
+            return f || null;
+          };
+
           for (const path of uniquePaths) {
             try {
-              const testFile = zip.file(path);
+              const testFile = tryLookup(path);
               if (testFile) {
                 imageFile = testFile;
                 successfulPath = path;
                 break;
               }
-              
+
               // Also try case-insensitive versions
               const lowerPath = path.toLowerCase();
-              const lowerFile = zip.file(lowerPath);
+              const lowerFile = tryLookup(lowerPath);
               if (lowerFile) {
                 imageFile = lowerFile;
                 successfulPath = lowerPath;
@@ -252,6 +263,20 @@ const EPUBReader = () => {
     return div.innerHTML;
   };
 
+  // Look up a file in the zip, trying both the literal path and the URL-decoded
+  // form. OPF/NCX hrefs are URIs (e.g. "CR%21foo.html") but JSZip indexes by the
+  // raw filename ("CR!foo.html"). Decode-on-lookup handles both layouts safely.
+  const getZipFile = (zip, p) => {
+    if (!p) return null;
+    let f = zip.file(p);
+    if (f) return f;
+    try {
+      const decoded = decodeURIComponent(p);
+      if (decoded !== p) f = zip.file(decoded);
+    } catch (_) { /* malformed URI: ignore */ }
+    return f || null;
+  };
+
   // Parse EPUB file
   const parseEPUB = async (file) => {
     try {
@@ -259,7 +284,11 @@ const EPUBReader = () => {
       const zip = await JSZip.loadAsync(file);
       
       // Read container.xml to find the OPF file
-      const containerXml = await zip.file('META-INF/container.xml').async('string');
+      const containerFile = getZipFile(zip, 'META-INF/container.xml');
+      if (!containerFile) {
+        throw new Error('Not a valid EPUB file (missing META-INF/container.xml). Only .epub files are supported.');
+      }
+      const containerXml = await containerFile.async('string');
       const parser = new DOMParser();
       const containerDoc = parser.parseFromString(containerXml, 'text/xml');
       
@@ -268,7 +297,11 @@ const EPUBReader = () => {
       const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/'));
       
       // Read and parse the OPF file
-      const opfXml = await zip.file(opfPath).async('string');
+      const opfFile = getZipFile(zip, opfPath);
+      if (!opfFile) {
+        throw new Error(`EPUB is malformed: OPF file not found at "${opfPath}".`);
+      }
+      const opfXml = await opfFile.async('string');
       const opfDoc = parser.parseFromString(opfXml, 'text/xml');
       
       // Extract metadata
@@ -299,7 +332,9 @@ const EPUBReader = () => {
       if (ncxItem) {
         try {
           const ncxPath = opfDir ? `${opfDir}/${ncxItem.getAttribute('href')}` : ncxItem.getAttribute('href');
-          const ncxContent = await zip.file(ncxPath).async('string');
+          const ncxFile = getZipFile(zip, ncxPath);
+          if (!ncxFile) throw new Error(`NCX file not found at ${ncxPath}`);
+          const ncxContent = await ncxFile.async('string');
           const ncxDoc = parser.parseFromString(ncxContent, 'text/xml');
           const navPoints = ncxDoc.querySelectorAll('navPoint');
           
@@ -325,7 +360,9 @@ const EPUBReader = () => {
       if (navItem && Object.keys(tocTitles).length === 0) {
         try {
           const navPath = opfDir ? `${opfDir}/${navItem.getAttribute('href')}` : navItem.getAttribute('href');
-          const navContent = await zip.file(navPath).async('string');
+          const navFile = getZipFile(zip, navPath);
+          if (!navFile) throw new Error(`Nav file not found at ${navPath}`);
+          const navContent = await navFile.async('string');
           const navDoc = parser.parseFromString(navContent, 'text/html');
           const navLinks = navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a');
           
@@ -346,43 +383,57 @@ const EPUBReader = () => {
       // Load chapters based on spine order
       const loadedChapters = [];
       
+      const htmlTypes = new Set([
+        'application/xhtml+xml',
+        'application/html+xml',
+        'application/xml',
+        'text/html',
+        'text/xml',
+      ]);
+
       for (const itemRef of spine) {
         const idref = itemRef.getAttribute('idref');
         const manifestItem = manifestMap[idref];
-        
-        if (manifestItem && manifestItem.type === 'application/xhtml+xml') {
-          const chapterPath = opfDir ? `${opfDir}/${manifestItem.href}` : manifestItem.href;
-          const chapterContent = await zip.file(chapterPath).async('string');
-          
-          // Try to get title from TOC first, then fallback to parsing HTML
-          let chapterTitle = tocTitles[manifestItem.href];
-          
-          if (!chapterTitle) {
-            // Parse the chapter HTML to extract title
-            const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
-            chapterTitle = chapterDoc.querySelector('title')?.textContent || 
-                          chapterDoc.querySelector('h1')?.textContent || 
-                          chapterDoc.querySelector('h2')?.textContent ||
-                          chapterDoc.querySelector('h3')?.textContent;
-          }
-          
-          // Final fallback if no title found
-          if (!chapterTitle || chapterTitle.trim() === '') {
-            chapterTitle = `Chapter ${loadedChapters.length + 1}`;
-          }
-          
-          // Extract body content
-          const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
-          const bodyContent = chapterDoc.querySelector('body')?.innerHTML || chapterContent;
-          
-          // Process images and styles if needed
-          const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
-          
-          loadedChapters.push({
-            title: chapterTitle.trim(),
-            content: processedContent
-          });
+        if (!manifestItem) {
+          console.warn(`Skipping spine itemref with no manifest match: idref="${idref}"`);
+          continue;
         }
+
+        const mediaType = (manifestItem.type || '').trim().toLowerCase();
+        const looksLikeHtml = htmlTypes.has(mediaType) || /\.x?html?$/i.test(manifestItem.href || '');
+        if (!looksLikeHtml) {
+          console.warn(`Skipping non-HTML spine item: ${manifestItem.href} (type="${manifestItem.type}")`);
+          continue;
+        }
+
+        const chapterPath = opfDir ? `${opfDir}/${manifestItem.href}` : manifestItem.href;
+        const chapterFile = getZipFile(zip, chapterPath);
+        if (!chapterFile) {
+          console.warn(`Skipping missing chapter: ${chapterPath}`);
+          continue;
+        }
+        const chapterContent = await chapterFile.async('string');
+
+        let chapterTitle = tocTitles[manifestItem.href];
+        if (!chapterTitle) {
+          const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
+          chapterTitle = chapterDoc.querySelector('title')?.textContent ||
+                        chapterDoc.querySelector('h1')?.textContent ||
+                        chapterDoc.querySelector('h2')?.textContent ||
+                        chapterDoc.querySelector('h3')?.textContent;
+        }
+        if (!chapterTitle || chapterTitle.trim() === '') {
+          chapterTitle = `Chapter ${loadedChapters.length + 1}`;
+        }
+
+        const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
+        const bodyContent = chapterDoc.querySelector('body')?.innerHTML || chapterContent;
+        const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
+
+        loadedChapters.push({
+          title: chapterTitle.trim(),
+          content: processedContent,
+        });
       }
       
       if (loadedChapters.length === 0) {
@@ -403,9 +454,13 @@ const EPUBReader = () => {
   // Handle file selection
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      parseEPUB(file);
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.epub')) {
+      alert('Please select an .epub file. PDFs and other formats are not supported.');
+      e.target.value = '';
+      return;
     }
+    parseEPUB(file);
   };
 
   // Navigate chapters
