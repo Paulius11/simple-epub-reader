@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/simple-epub-reader/static/css/main.5868e59f.css",
-    "main.js": "/simple-epub-reader/static/js/main.08f0ba66.js",
+    "main.css": "/simple-epub-reader/static/css/main.9e30b3c2.css",
+    "main.js": "/simple-epub-reader/static/js/main.f1c8fa8a.js",
     "index.html": "/simple-epub-reader/index.html",
-    "main.5868e59f.css.map": "/simple-epub-reader/static/css/main.5868e59f.css.map",
-    "main.08f0ba66.js.map": "/simple-epub-reader/static/js/main.08f0ba66.js.map"
+    "main.9e30b3c2.css.map": "/simple-epub-reader/static/css/main.9e30b3c2.css.map",
+    "main.f1c8fa8a.js.map": "/simple-epub-reader/static/js/main.f1c8fa8a.js.map"
   },
   "entrypoints": [
-    "static/css/main.5868e59f.css",
-    "static/js/main.08f0ba66.js"
+    "static/css/main.9e30b3c2.css",
+    "static/js/main.f1c8fa8a.js"
   ]
 }
