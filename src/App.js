@@ -14,6 +14,7 @@ import {
   BookmarkPlus,
   Type,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { parseEpub } from './lib/epub';
 import * as storage from './lib/storage';
@@ -372,6 +373,20 @@ const EPUBReader = () => {
   const deleteBookmark = (e, id) => {
     e.stopPropagation();
     setBookmarks(storage.removeBookmark(bookId, id));
+  };
+
+  // --- select-all in current chapter --------------------------------------
+
+  const selectAllChapterText = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    const selection = window.getSelection?.();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    el.focus?.();
   };
 
   // --- reading mode --------------------------------------------------------
@@ -781,6 +796,13 @@ const EPUBReader = () => {
             <button className="icon-button" onClick={addBookmarkHere} aria-label="Bookmark">
               <BookmarkPlus size={20} />
             </button>
+            <button
+              className="icon-button"
+              onClick={selectAllChapterText}
+              aria-label="Select all chapter text"
+            >
+              <Copy size={20} />
+            </button>
             <button className="icon-button" onClick={toggleTheme}>
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -832,6 +854,15 @@ const EPUBReader = () => {
 
               <button className="icon-button" onClick={addBookmarkHere} aria-label="Bookmark this spot">
                 <BookmarkPlus size={20} />
+              </button>
+
+              <button
+                className="icon-button"
+                onClick={selectAllChapterText}
+                aria-label="Select all chapter text"
+                title="Select all text in this chapter"
+              >
+                <Copy size={20} />
               </button>
 
               <div className="font-button-wrap">
