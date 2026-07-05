@@ -289,6 +289,70 @@ describe('parseEpub - chapter title fallbacks', () => {
   });
 });
 
+describe('parseEpub - multiple TOC entries per spine file', () => {
+  it('splits one spine file into a chapter per NCX fragment anchor', async () => {
+    // Mirrors the Dante "Dieviškoji komedija" layout: a single xhtml file holds
+    // a section header plus several cantos, each marked by <h4 id="toc_N">, and
+    // the NCX points at those fragments.
+    const zip = new JSZip();
+    zip.file('mimetype', MIMETYPE);
+    zip.file('META-INF/container.xml', CONTAINER_XML);
+    zip.file(
+      'OEBPS/content.opf',
+      `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">uid</dc:identifier><dc:title>x</dc:title>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="ch1" href="part.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx"><itemref idref="ch1"/></spine>
+</package>`
+    );
+    zip.file(
+      'OEBPS/toc.ncx',
+      `<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head><meta name="dtb:uid" content="uid"/></head>
+  <docTitle><text>x</text></docTitle>
+  <navMap>
+    <navPoint id="n0" playOrder="1"><navLabel><text>PART ONE</text></navLabel><content src="part.xhtml"/></navPoint>
+    <navPoint id="n1" playOrder="2"><navLabel><text>Canto I</text></navLabel><content src="part.xhtml#toc_1"/></navPoint>
+    <navPoint id="n2" playOrder="3"><navLabel><text>Canto II</text></navLabel><content src="part.xhtml#toc_2"/></navPoint>
+    <navPoint id="n3" playOrder="4"><navLabel><text>Canto III</text></navLabel><content src="part.xhtml#toc_3"/></navPoint>
+  </navMap>
+</ncx>`
+    );
+    zip.file(
+      'OEBPS/part.xhtml',
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title></title></head>
+<body>
+  <h2>PART ONE</h2>
+  <h4 id="toc_1">Canto I</h4><p>first canto body</p>
+  <h4 id="toc_2">Canto II</h4><p>second canto body</p>
+  <h4 id="toc_3">Canto III</h4><p>third canto body</p>
+</body></html>`
+    );
+    const buf = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const { chapters } = await parseEpub(buf);
+    expect(chapters.map((c) => c.title)).toEqual([
+      'PART ONE',
+      'Canto I',
+      'Canto II',
+      'Canto III',
+    ]);
+    // Content lands in the right segment, and nothing leaks across boundaries.
+    expect(chapters[1].content).toContain('first canto body');
+    expect(chapters[1].content).not.toContain('second canto body');
+    expect(chapters[3].content).toContain('third canto body');
+  });
+});
+
 describe('__internals.getZipFile', () => {
   it('returns the literal match when present', async () => {
     const zip = new JSZip();

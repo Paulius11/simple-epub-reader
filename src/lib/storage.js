@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   fontFamily: 'serif', // 'serif' | 'sans' | 'mono'
   lineHeight: 1.7,
   pageWidth: 720, // px max-width
+  showProgress: false, // show the chapter/progress bar at the bottom
 };
 
 const safeGet = (key) => {

@@ -567,6 +567,18 @@ const EPUBReader = () => {
         />
         <span className="font-value">{settings.pageWidth}px</span>
       </div>
+      <div className="font-row">
+        <label>Progress bar</label>
+        <button
+          type="button"
+          className={`font-toggle ${settings.showProgress ? 'active' : ''}`}
+          role="switch"
+          aria-checked={settings.showProgress}
+          onClick={() => updateSettings({ showProgress: !settings.showProgress })}
+        >
+          {settings.showProgress ? 'On' : 'Off'}
+        </button>
+      </div>
     </div>
   );
 
@@ -767,10 +779,10 @@ const EPUBReader = () => {
           </div>
 
           {renderSidebar()}
-          {renderProgressBar()}
+          {settings.showProgress && renderProgressBar()}
         </div>
       ) : (
-        <div className="reader-container">
+        <div className={`reader-container ${settings.showProgress ? 'has-progress' : ''}`}>
           <header className="header">
             <div className="header-left">
               <button className="back-button" onClick={backToMenu} aria-label="Home">
@@ -902,7 +914,7 @@ const EPUBReader = () => {
             </button>
           </nav>
 
-          {renderProgressBar()}
+          {settings.showProgress && renderProgressBar()}
           {renderSidebar()}
         </div>
       )}

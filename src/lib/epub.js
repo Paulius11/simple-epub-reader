@@ -159,18 +159,24 @@ const processChapterContent = async (content, chapterPath, zip, opfDir) => {
   return div.innerHTML;
 };
 
+// Parse the NCX (EPUB2) TOC into an *ordered* list of entries, preserving the
+// `#fragment` of each `content src`. Many EPUBs pack multiple logical chapters
+// (e.g. cantos) into one spine file, distinguishing them only by fragment; we
+// need every entry, not one-per-file, so downstream splitting can work.
+// querySelectorAll returns navPoints in document (reading) order.
 const parseTocFromNcx = async (ncxFile, parser) => {
-  const tocTitles = {};
+  const entries = [];
   const ncxContent = await ncxFile.async('string');
   const ncxDoc = parser.parseFromString(ncxContent, 'text/xml');
   ncxDoc.querySelectorAll('navPoint').forEach((navPoint) => {
     const label = navPoint.querySelector('navLabel text')?.textContent;
     const src = navPoint.querySelector('content')?.getAttribute('src');
     if (label && src) {
-      tocTitles[src.split('#')[0]] = label.trim();
+      const [href, fragment] = src.split('#');
+      entries.push({ href, fragment: fragment || null, title: label.trim() });
     }
   });
-  return tocTitles;
+  return entries;
 };
 
 // Fast non-crypto hash for fallback bookId. Good enough to disambiguate files;
@@ -214,18 +220,80 @@ const findCoverHref = (metadataEl, manifestItems) => {
   return null;
 };
 
+// EPUB3 nav-doc equivalent of parseTocFromNcx: ordered entries, fragments kept.
 const parseTocFromNav = async (navFile, parser) => {
-  const tocTitles = {};
+  const entries = [];
+  const seen = new Set();
   const navContent = await navFile.async('string');
   const navDoc = parser.parseFromString(navContent, 'text/html');
   navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach((link) => {
-    const href = link.getAttribute('href');
+    const rawHref = link.getAttribute('href');
     const title = link.textContent;
-    if (href && title) {
-      tocTitles[href.split('#')[0]] = title.trim();
-    }
+    if (!rawHref || !title) return;
+    // The "nav a" fallback selector can match the same link twice when the nav
+    // has an epub:type="toc"; dedupe on href.
+    if (seen.has(rawHref)) return;
+    seen.add(rawHref);
+    const [href, fragment] = rawHref.split('#');
+    entries.push({ href, fragment: fragment || null, title: title.trim() });
   });
-  return tocTitles;
+  return entries;
+};
+
+// Split a chapter's <body> element into segments at the given TOC anchor
+// entries, so that one spine file containing several logical chapters (e.g.
+// "I GIESMĖ", "II GIESMĖ" marked by `<h4 id="toc_N">`) becomes multiple
+// chapters. Each entry begins a new segment at the top-level body child that
+// contains its anchor; an entry with no fragment begins at the file start.
+//
+// Returns [{ title, html }] in document order, or null when there is nothing
+// useful to split on (caller then keeps the file as a single chapter).
+const splitBodyByAnchors = (bodyEl, entries) => {
+  const children = Array.from(bodyEl.childNodes);
+
+  // Resolve each entry to the index of the top-level body child where it begins.
+  const points = [];
+  for (const entry of entries) {
+    let childIndex = 0;
+    if (entry.fragment) {
+      const anchor =
+        bodyEl.querySelector(`[id="${entry.fragment}"]`) ||
+        bodyEl.querySelector(`[name="${entry.fragment}"]`);
+      if (!anchor) continue; // fragment not in this file — skip
+      let node = anchor;
+      while (node.parentNode && node.parentNode !== bodyEl) node = node.parentNode;
+      childIndex = children.indexOf(node);
+      if (childIndex < 0) continue;
+    }
+    points.push({ title: entry.title, fragment: entry.fragment, childIndex });
+  }
+
+  if (points.length < 2) return null; // nothing gained by splitting
+
+  points.sort((a, b) => a.childIndex - b.childIndex);
+  // Attach any leading content (before the first anchor) to the first segment.
+  points[0].childIndex = 0;
+
+  const segments = [];
+  for (let i = 0; i < points.length; i++) {
+    const start = points[i].childIndex;
+    const end = i + 1 < points.length ? points[i + 1].childIndex : children.length;
+    // Consecutive entries sharing a top-level child would make an empty slice;
+    // fold their titles together rather than emit a contentless chapter.
+    if (end <= start) {
+      if (segments.length) segments[segments.length - 1].extraTitles.push(points[i].title);
+      continue;
+    }
+    const container = bodyEl.ownerDocument.createElement('div');
+    for (let j = start; j < end; j++) container.appendChild(children[j].cloneNode(true));
+    segments.push({
+      title: points[i].title,
+      fragment: points[i].fragment,
+      html: container.innerHTML,
+      extraTitles: [],
+    });
+  }
+  return segments.length >= 2 ? segments : null;
 };
 
 /**
@@ -304,8 +372,9 @@ export async function parseEpub(file) {
     }
   }
 
-  // TOC: prefer NCX (EPUB2), fall back to nav doc (EPUB3).
-  let tocTitles = {};
+  // TOC: prefer NCX (EPUB2), fall back to nav doc (EPUB3). Both return an
+  // ordered list of { href, fragment, title } entries.
+  let tocEntries = [];
   const ncxItem = Array.from(manifest).find(
     (item) => item.getAttribute('media-type') === 'application/x-dtbncx+xml'
   );
@@ -313,12 +382,12 @@ export async function parseEpub(file) {
     try {
       const ncxPath = opfDir ? `${opfDir}/${ncxItem.getAttribute('href')}` : ncxItem.getAttribute('href');
       const ncxFile = getZipFile(zip, ncxPath);
-      if (ncxFile) tocTitles = await parseTocFromNcx(ncxFile, parser);
+      if (ncxFile) tocEntries = await parseTocFromNcx(ncxFile, parser);
     } catch (err) {
       console.warn('Could not parse NCX file:', err);
     }
   }
-  if (Object.keys(tocTitles).length === 0) {
+  if (tocEntries.length === 0) {
     const navItem = Array.from(manifest).find(
       (item) =>
         item.getAttribute('properties')?.includes('nav') ||
@@ -328,12 +397,28 @@ export async function parseEpub(file) {
       try {
         const navPath = opfDir ? `${opfDir}/${navItem.getAttribute('href')}` : navItem.getAttribute('href');
         const navFile = getZipFile(zip, navPath);
-        if (navFile) tocTitles = await parseTocFromNav(navFile, parser);
+        if (navFile) tocEntries = await parseTocFromNav(navFile, parser);
       } catch (err) {
         console.warn('Could not parse navigation file:', err);
       }
     }
   }
+
+  // Group TOC entries by the spine file they point into, preserving order.
+  const tocByHref = new Map();
+  for (const entry of tocEntries) {
+    if (!tocByHref.has(entry.href)) tocByHref.set(entry.href, []);
+    tocByHref.get(entry.href).push(entry);
+  }
+  // NCX srcs and manifest hrefs may differ only by URL-encoding; try both forms.
+  const getTocEntriesFor = (href) => {
+    if (tocByHref.has(href)) return tocByHref.get(href);
+    try {
+      const decoded = decodeURIComponent(href);
+      if (tocByHref.has(decoded)) return tocByHref.get(decoded);
+    } catch (_) { /* malformed URI: ignore */ }
+    return [];
+  };
 
   const chapters = [];
   for (const itemRef of spine) {
@@ -359,10 +444,36 @@ export async function parseEpub(file) {
       continue;
     }
     const chapterContent = await chapterFile.async('string');
+    const doc = parser.parseFromString(chapterContent, 'text/html');
+    const bodyEl = doc.querySelector('body');
+    const entries = getTocEntriesFor(manifestItem.href);
 
-    let chapterTitle = tocTitles[manifestItem.href];
+    // If this file holds several TOC entries (with fragments), split it into
+    // one chapter per entry. Otherwise keep it as a single chapter.
+    const segments = bodyEl ? splitBodyByAnchors(bodyEl, entries) : null;
+
+    if (segments) {
+      for (const segment of segments) {
+        const processedContent = await processChapterContent(
+          segment.html,
+          chapterPath,
+          zip,
+          opfDir
+        );
+        const title = [segment.title, ...segment.extraTitles].filter(Boolean).join(' · ');
+        chapters.push({
+          title: title || `Chapter ${chapters.length + 1}`,
+          content: processedContent,
+          wordCount: countWords(processedContent),
+          href: manifestItem.href,
+          fragment: segment.fragment || null,
+        });
+      }
+      continue;
+    }
+
+    let chapterTitle = entries[0]?.title;
     if (!chapterTitle) {
-      const doc = parser.parseFromString(chapterContent, 'text/html');
       chapterTitle =
         doc.querySelector('title')?.textContent ||
         doc.querySelector('h1')?.textContent ||
@@ -373,8 +484,7 @@ export async function parseEpub(file) {
       chapterTitle = `Chapter ${chapters.length + 1}`;
     }
 
-    const doc = parser.parseFromString(chapterContent, 'text/html');
-    const bodyContent = doc.querySelector('body')?.innerHTML || chapterContent;
+    const bodyContent = bodyEl?.innerHTML || chapterContent;
     const processedContent = await processChapterContent(bodyContent, chapterPath, zip, opfDir);
 
     chapters.push({

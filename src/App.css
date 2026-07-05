@@ -500,7 +500,8 @@
     position: relative;
 }
 
-.navigation-bar {
+/* Reserve space for the absolutely-positioned progress bar only when it's shown. */
+.reader-container.has-progress .navigation-bar {
     padding-bottom: 36px;
 }
 
@@ -817,6 +818,22 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.font-toggle {
+    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 4px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    min-width: 48px;
+}
+
+.font-toggle.active {
+    background: var(--gradient-start);
+    color: #ffffff;
 }
 
 /* ============================================================ */
