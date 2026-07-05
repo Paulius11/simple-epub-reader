@@ -98,6 +98,16 @@ const EPUBReader = () => {
 
   // --- settings & theme bootstrap -----------------------------------------
 
+  // Reflect the open book in the browser tab title; restore the default on the
+  // home screen and when the reader unmounts.
+  useEffect(() => {
+    const DEFAULT_TITLE = 'Simple EPUB Reader';
+    document.title = epub && metadata?.title ? metadata.title : DEFAULT_TITLE;
+    return () => {
+      document.title = DEFAULT_TITLE;
+    };
+  }, [epub, metadata?.title]);
+
   // Apply persisted darkMode (or follow system) on first load.
   useEffect(() => {
     if (settings.darkMode === null) {
