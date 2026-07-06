@@ -521,28 +521,41 @@ const EPUBReader = () => {
 
   // --- auto-hide header/footer ---------------------------------------------
 
-  // When enabled, the header and bottom bar slide away after a short idle
-  // period to maximise reading space, and reappear on any pointer/key/scroll
-  // activity. Panels being open (sidebar/search/typography) keep them visible.
+  // When enabled, the header and bottom bar slide away to maximise reading
+  // space. To avoid flicker while reading, they only reappear when the pointer
+  // is deliberately moved to the top or bottom edge of the window (not on any
+  // movement). Open panels (sidebar/search/typography) keep them visible.
   useEffect(() => {
     if (!epub || readingMode || !settings.autoHideChrome) {
       setChromeHidden(false);
       if (chromeTimer.current) clearTimeout(chromeTimer.current);
       return;
     }
+    const EDGE = 72; // px from top/bottom that counts as the reveal zone
     const blocked = () => sidebarOpen || showFontPanel || isSearching;
-    const wake = () => {
-      setChromeHidden(false);
+    const scheduleHide = (delay) => {
       if (chromeTimer.current) clearTimeout(chromeTimer.current);
       chromeTimer.current = setTimeout(() => {
         if (!blocked()) setChromeHidden(true);
-      }, 2500);
+      }, delay);
     };
-    wake();
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'];
-    events.forEach((ev) => window.addEventListener(ev, wake, { passive: true }));
+    const onMove = (e) => {
+      const nearEdge = e.clientY <= EDGE || e.clientY >= window.innerHeight - EDGE;
+      if (nearEdge) {
+        setChromeHidden(false);
+        if (chromeTimer.current) clearTimeout(chromeTimer.current);
+      } else {
+        // Moving within the reading area never reveals the bars; if they're
+        // showing (e.g. just left the edge), hide again shortly.
+        scheduleHide(600);
+      }
+    };
+    // Show briefly on entering, then hide so the reader knows they're there.
+    setChromeHidden(false);
+    scheduleHide(2500);
+    window.addEventListener('mousemove', onMove, { passive: true });
     return () => {
-      events.forEach((ev) => window.removeEventListener(ev, wake));
+      window.removeEventListener('mousemove', onMove);
       if (chromeTimer.current) clearTimeout(chromeTimer.current);
     };
   }, [epub, readingMode, settings.autoHideChrome, sidebarOpen, showFontPanel, isSearching]);
