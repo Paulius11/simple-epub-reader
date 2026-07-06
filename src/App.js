@@ -89,10 +89,19 @@ const EPUBReader = () => {
   const [recent, setRecent] = useState(() => storage.getRecent());
   const [chapterScrollRatio, setChapterScrollRatio] = useState(0);
 
+  // --- paged (multi-column) reading --------------------------------------
+  const [page, setPage] = useState(0);
+  const [pageCount, setPageCount] = useState(1);
+
   const fileInputRef = useRef(null);
-  const contentRef = useRef(null);
+  const contentRef = useRef(null); // the multi-column content element
+  const viewportRef = useRef(null); // its overflow-clipped scroll container
   const searchInputRef = useRef(null);
   const progressSaveTimer = useRef(null);
+  const strideRef = useRef(0); // px to advance per page (clientWidth + column-gap)
+  // When set, the next pagination measure restores to this 0..1 position instead
+  // of page 0 (used on chapter change / resize / returning to a book).
+  const pendingRatioRef = useRef(0);
 
   const bookId = metadata?.bookId;
 
@@ -148,6 +157,8 @@ const EPUBReader = () => {
       setCurrentChapter(startIndex);
       setContent(loadedChapters[startIndex].content);
       setChapterScrollRatio(progress?.scrollRatio || 0);
+      pendingRatioRef.current = progress?.scrollRatio || 0;
+      setPage(0);
 
       // Restore bookmarks for this book.
       setBookmarks(storage.getBookmarks(meta.bookId));
@@ -182,17 +193,73 @@ const EPUBReader = () => {
     parseEPUB(file);
   };
 
-  // After the chapter content renders, scroll to the saved position (once).
-  useEffect(() => {
-    if (!contentRef.current || !content) return;
+  // --- pagination (multi-column paged reader) ------------------------------
+
+  // Measure how many pages the current chapter occupies at the current size and
+  // cache the per-page scroll stride (viewport width + column gap).
+  const measurePages = useCallback(() => {
+    const vp = viewportRef.current;
     const el = contentRef.current;
-    requestAnimationFrame(() => {
-      const max = el.scrollHeight - el.clientHeight;
-      el.scrollTop = max > 0 ? max * chapterScrollRatio : 0;
+    if (!vp || !el) return 1;
+    const style = getComputedStyle(el);
+    const gap = parseFloat(style.columnGap) || 0;
+    const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    // A page advances by one content-box width plus the inter-column gap; the
+    // element's horizontal padding is NOT part of the repeating stride.
+    const contentBox = el.clientWidth - padX;
+    strideRef.current = contentBox + gap;
+    const maxScroll = vp.scrollWidth - vp.clientWidth;
+    const total =
+      strideRef.current > 0 ? Math.max(1, Math.round(maxScroll / strideRef.current) + 1) : 1;
+    setPageCount(total);
+    return total;
+  }, []);
+
+  // Scroll the viewport to a given page. onViewportScroll keeps state in sync.
+  const goToPage = useCallback((p, { smooth = false } = {}) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const stride = strideRef.current || vp.clientWidth || 1;
+    const maxScroll = vp.scrollWidth - vp.clientWidth;
+    const left = Math.max(0, Math.min(p * stride, maxScroll));
+    vp.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+
+  // After content/size changes, remeasure and restore the pending position.
+  useEffect(() => {
+    if (readingMode) return; // reading mode keeps vertical scrolling
+    if (!viewportRef.current || !content) return;
+    const id = requestAnimationFrame(() => {
+      const total = measurePages();
+      const target = Math.round((pendingRatioRef.current || 0) * (total - 1));
+      pendingRatioRef.current = 0;
+      goToPage(target);
     });
-    // We intentionally only restore on chapter changes, not on every scroll-ratio update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, currentChapter]);
+    return () => cancelAnimationFrame(id);
+  }, [
+    content,
+    currentChapter,
+    readingMode,
+    settings.fontSize,
+    settings.fontFamily,
+    settings.lineHeight,
+    settings.pageWidth,
+    measurePages,
+    goToPage,
+  ]);
+
+  // Keep pagination correct across window/viewport resizes (preserve position).
+  useEffect(() => {
+    const onResize = () => {
+      if (readingMode || !viewportRef.current) return;
+      const prevMax = pageCount - 1;
+      const ratio = prevMax > 0 ? page / prevMax : 0;
+      const total = measurePages();
+      goToPage(Math.round(ratio * (total - 1)));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [readingMode, page, pageCount, measurePages, goToPage]);
 
   // Re-process images after content renders (preserved from previous version).
   useEffect(() => {
@@ -203,12 +270,27 @@ const EPUBReader = () => {
         if (dataSrc && (!img.src || img.src !== dataSrc)) {
           img.src = dataSrc;
         }
+        // Images decode asynchronously and change column layout — remeasure the
+        // page count once each finishes (paged reader only).
+        if (!readingMode && !img.complete) {
+          img.addEventListener(
+            'load',
+            () => {
+              const ratio = pageCount - 1 > 0 ? page / (pageCount - 1) : 0;
+              const total = measurePages();
+              goToPage(Math.round(ratio * (total - 1)));
+            },
+            { once: true }
+          );
+        }
       });
     }
-  }, [content, currentChapter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, currentChapter, readingMode]);
 
   // --- scroll tracking + progress persistence ------------------------------
 
+  // Reading mode: vertical scroll ratio. Persisted as scrollRatio.
   const handleContentScroll = useCallback(() => {
     const el = contentRef.current;
     if (!el) return;
@@ -217,6 +299,26 @@ const EPUBReader = () => {
     setChapterScrollRatio(ratio);
 
     // Debounce-write to localStorage.
+    if (!bookId) return;
+    if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current);
+    progressSaveTimer.current = setTimeout(() => {
+      storage.saveProgress(bookId, { chapterIndex: currentChapter, scrollRatio: ratio });
+    }, 400);
+  }, [bookId, currentChapter]);
+
+  // Paged reader: derive the current page + position ratio from horizontal
+  // scroll (covers button paging, keyboard, trackpad, and scrollIntoView).
+  const handleViewportScroll = useCallback(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const stride = strideRef.current || vp.clientWidth || 1;
+    const maxScroll = vp.scrollWidth - vp.clientWidth;
+    const maxPage = stride > 0 ? Math.max(0, Math.round(maxScroll / stride)) : 0;
+    const p = Math.min(maxPage, Math.round(vp.scrollLeft / stride));
+    const ratio = maxPage > 0 ? p / maxPage : 0;
+    setPage(p);
+    setChapterScrollRatio(ratio);
+
     if (!bookId) return;
     if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current);
     progressSaveTimer.current = setTimeout(() => {
@@ -234,10 +336,17 @@ const EPUBReader = () => {
   const goToChapter = useCallback(
     (index, opts = {}) => {
       if (index < 0 || index >= chapters.length) return;
+      // Where to land once the new chapter is measured: an explicit ratio, the
+      // end (when paging backwards into the previous chapter), or the start.
+      const ratio = opts.scrollRatio != null ? opts.scrollRatio : opts.toEnd ? 1 : 0;
+      pendingRatioRef.current = ratio;
       setCurrentChapter(index);
       setContent(chapters[index].content);
-      setChapterScrollRatio(opts.scrollRatio || 0);
-      if (contentRef.current && !opts.scrollRatio) contentRef.current.scrollTop = 0;
+      setChapterScrollRatio(ratio);
+      setPage(0);
+      if (contentRef.current && readingMode && !opts.scrollRatio) {
+        contentRef.current.scrollTop = 0;
+      }
       if (sidebarOpen) setSidebarOpen(false);
       if (showFontPanel) setShowFontPanel(false);
       // Only reset search UI state; do NOT call clearSearch, which would
@@ -246,8 +355,19 @@ const EPUBReader = () => {
       resetSearchState();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chapters, sidebarOpen, showFontPanel]
+    [chapters, sidebarOpen, showFontPanel, readingMode]
   );
+
+  // Flip one page; step into the adjacent chapter at its boundaries.
+  const nextPage = useCallback(() => {
+    if (page < pageCount - 1) goToPage(page + 1, { smooth: true });
+    else goToChapter(currentChapter + 1);
+  }, [page, pageCount, goToPage, goToChapter, currentChapter]);
+
+  const prevPage = useCallback(() => {
+    if (page > 0) goToPage(page - 1, { smooth: true });
+    else goToChapter(currentChapter - 1, { toEnd: true });
+  }, [page, goToPage, goToChapter, currentChapter]);
 
   // --- search --------------------------------------------------------------
 
@@ -293,10 +413,12 @@ const EPUBReader = () => {
   }, [searchQuery, performSearch]);
 
   const goToSearchResult = (result) => {
+    pendingRatioRef.current = 0;
     setCurrentChapter(result.chapterIndex);
     setContent(chapters[result.chapterIndex].content);
+    setPage(0);
     setIsSearching(false);
-    if (contentRef.current) contentRef.current.scrollTop = 0;
+    if (contentRef.current && readingMode) contentRef.current.scrollTop = 0;
     setTimeout(() => highlightSearchText(searchQuery, result.chapterIndex), 200);
   };
 
@@ -309,12 +431,15 @@ const EPUBReader = () => {
       '<mark class="search-highlight">$1</mark>'
     );
     setContent(highlighted);
+    // scrollIntoView reveals the match on whichever axis the reader scrolls:
+    // horizontally (inline) in paged mode, vertically (block) in reading mode.
     setTimeout(() => {
       contentRef.current?.querySelector('.search-highlight')?.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
+        inline: 'center',
       });
-    }, 100);
+    }, 150);
   };
 
   // Reset only the search UI state. Does NOT touch chapter content — safe to
@@ -384,6 +509,9 @@ const EPUBReader = () => {
   // --- reading mode --------------------------------------------------------
 
   const toggleReadingMode = () => {
+    // Carry the current position across the layout switch (approximate: vertical
+    // scroll ratio <-> page ratio).
+    pendingRatioRef.current = chapterScrollRatio;
     setReadingMode(!readingMode);
     setShowFloatingMenu(false);
     setSidebarOpen(false);
@@ -397,8 +525,10 @@ const EPUBReader = () => {
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
 
-      if (e.key === 'ArrowLeft') goToChapter(currentChapter - 1);
-      if (e.key === 'ArrowRight') goToChapter(currentChapter + 1);
+      // In the paged reader, arrows flip pages (and cross chapter boundaries);
+      // in reading mode they still jump whole chapters.
+      if (e.key === 'ArrowLeft') readingMode ? goToChapter(currentChapter - 1) : prevPage();
+      if (e.key === 'ArrowRight') readingMode ? goToChapter(currentChapter + 1) : nextPage();
       if (e.key === 'Escape') {
         if (readingMode) toggleReadingMode();
         else if (sidebarOpen) setSidebarOpen(false);
@@ -411,7 +541,7 @@ const EPUBReader = () => {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChapter, readingMode, isSearching, sidebarOpen, showFontPanel, chapters, bookId, chapterScrollRatio]);
+  }, [currentChapter, readingMode, isSearching, sidebarOpen, showFontPanel, chapters, bookId, chapterScrollRatio, nextPage, prevPage]);
 
   // --- back to home --------------------------------------------------------
 
@@ -509,7 +639,11 @@ const EPUBReader = () => {
         <span className="progress-dot">·</span>
         <span>{Math.round(bookProgress * 100)}% book</span>
         <span className="progress-dot">·</span>
-        <span>{Math.round(chapterProgress * 100)}% chapter</span>
+        <span>
+          {readingMode
+            ? `${Math.round(chapterProgress * 100)}% chapter`
+            : `Page ${page + 1} of ${pageCount}`}
+        </span>
         <span className="progress-dot">·</span>
         <span>{formatTimeLeft(minutesLeft)} left</span>
       </div>
@@ -868,12 +1002,31 @@ const EPUBReader = () => {
           </header>
 
           <div className="content-area">
-            <div
-              ref={contentRef}
-              className="chapter-content"
-              onScroll={handleContentScroll}
-              dangerouslySetInnerHTML={{ __html: content }}
-            />
+            <button
+              className="page-nav-area prev"
+              onClick={prevPage}
+              disabled={currentChapter === 0 && page === 0}
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={28} />
+            </button>
+
+            <div ref={viewportRef} className="paged-viewport" onScroll={handleViewportScroll}>
+              <div
+                ref={contentRef}
+                className="chapter-content paged-content"
+                dangerouslySetInnerHTML={{ __html: content }}
+              />
+            </div>
+
+            <button
+              className="page-nav-area next"
+              onClick={nextPage}
+              disabled={currentChapter === chapters.length - 1 && page >= pageCount - 1}
+              aria-label="Next page"
+            >
+              <ChevronRight size={28} />
+            </button>
 
             {isSearching && (
               <div className={`search-results ${searchResults.length > 0 ? 'active' : ''}`}>

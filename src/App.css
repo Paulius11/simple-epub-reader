@@ -204,6 +204,62 @@
     text-align: justify;
 }
 
+/* ---- Paged multi-column reader -------------------------------------------- */
+
+.paged-viewport {
+    flex: 1;
+    height: 100%;
+    overflow: hidden; /* pages are revealed by programmatic horizontal scroll */
+}
+
+/* Layout overrides on top of .chapter-content typography. The content flows
+   top-to-bottom into fixed-height columns, overflowing horizontally; each
+   "page" is one viewport-width of columns. */
+.paged-content.chapter-content {
+    height: 100%;
+    max-width: none;
+    width: auto;
+    margin: 0;
+    overflow: visible;
+    padding: 36px 48px;
+    box-sizing: border-box;
+    /* A font-relative measure so several readable columns fill the width
+       (like a printed page), instead of one very wide column. */
+    column-width: 22em;
+    column-gap: 48px;
+    column-fill: auto;
+    /* keep images from spilling across the column edge */
+}
+
+.paged-content img {
+    max-height: 100%;
+}
+
+.page-nav-area {
+    flex: 0 0 auto;
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0.45;
+    transition: opacity 0.2s, background 0.2s;
+    z-index: 6;
+}
+
+.page-nav-area:hover:not(:disabled) {
+    opacity: 1;
+    background: var(--bg-secondary);
+}
+
+.page-nav-area:disabled {
+    opacity: 0.12;
+    cursor: default;
+}
+
 .search-highlight {
     background: #ffd700;
     color: #000;
