@@ -209,7 +209,18 @@
 .paged-viewport {
     flex: 1;
     height: 100%;
+    position: relative; /* positioning context for the page-padding spacer */
     overflow: hidden; /* pages are revealed by programmatic horizontal scroll */
+}
+
+/* Invisible element that pads the scrollable width out to a whole number of
+   pages, so the last page snaps to whole columns (see measurePages). */
+.paged-spacer {
+    position: absolute;
+    top: 0;
+    width: 0;
+    height: 1px;
+    pointer-events: none;
 }
 
 /* Layout overrides on top of .chapter-content typography. The content flows

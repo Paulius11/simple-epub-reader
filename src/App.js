@@ -100,6 +100,7 @@ const EPUBReader = () => {
   const viewportRef = useRef(null); // its overflow-clipped scroll container
   const searchInputRef = useRef(null);
   const progressSaveTimer = useRef(null);
+  const spacerRef = useRef(null); // pads scroll width to a whole number of pages
   const strideRef = useRef(0); // px to advance per page (clientWidth + column-gap)
   // When set, the next pagination measure restores to this 0..1 position instead
   // of page 0 (used on chapter change / resize / returning to a book).
@@ -202,17 +203,31 @@ const EPUBReader = () => {
   const measurePages = useCallback(() => {
     const vp = viewportRef.current;
     const el = contentRef.current;
+    const spacer = spacerRef.current;
     if (!vp || !el) return 1;
     const style = getComputedStyle(el);
     const gap = parseFloat(style.columnGap) || 0;
     const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     // A page advances by one content-box width plus the inter-column gap; the
     // element's horizontal padding is NOT part of the repeating stride.
-    const contentBox = el.clientWidth - padX;
-    strideRef.current = contentBox + gap;
-    const maxScroll = vp.scrollWidth - vp.clientWidth;
-    const total =
-      strideRef.current > 0 ? Math.max(1, Math.round(maxScroll / strideRef.current) + 1) : 1;
+    const stride = el.clientWidth - padX + gap;
+    strideRef.current = stride;
+    if (stride <= 0) {
+      setPageCount(1);
+      return 1;
+    }
+    // Measure the natural scroll extent with no spacer, then round the page
+    // count UP so the final partial column is always reachable.
+    if (spacer) spacer.style.width = '0px';
+    const naturalMax = Math.max(0, vp.scrollWidth - vp.clientWidth);
+    const total = naturalMax <= 2 ? 1 : Math.ceil((naturalMax - 2) / stride) + 1;
+    // Pad the scrollable width to exactly (total-1) strides so every page,
+    // including the last, snaps to whole columns (no clipped/skipped lines).
+    if (spacer) {
+      const desiredMax = (total - 1) * stride;
+      spacer.style.width = '1px';
+      spacer.style.left = `${desiredMax + vp.clientWidth - 1}px`;
+    }
     setPageCount(total);
     return total;
   }, []);
@@ -1076,6 +1091,7 @@ const EPUBReader = () => {
                 className="chapter-content paged-content"
                 dangerouslySetInnerHTML={{ __html: content }}
               />
+              <div ref={spacerRef} className="paged-spacer" aria-hidden="true" />
             </div>
 
             <button
