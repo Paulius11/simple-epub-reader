@@ -92,8 +92,10 @@ const EPUBReader = () => {
   // --- paged (multi-column) reading --------------------------------------
   const [page, setPage] = useState(0);
   const [pageCount, setPageCount] = useState(1);
+  const [chromeHidden, setChromeHidden] = useState(false); // auto-hide header/footer
 
   const fileInputRef = useRef(null);
+  const chromeTimer = useRef(null); // inactivity timer for auto-hide
   const contentRef = useRef(null); // the multi-column content element
   const viewportRef = useRef(null); // its overflow-clipped scroll container
   const searchInputRef = useRef(null);
@@ -517,6 +519,34 @@ const EPUBReader = () => {
     setSidebarOpen(false);
   };
 
+  // --- auto-hide header/footer ---------------------------------------------
+
+  // When enabled, the header and bottom bar slide away after a short idle
+  // period to maximise reading space, and reappear on any pointer/key/scroll
+  // activity. Panels being open (sidebar/search/typography) keep them visible.
+  useEffect(() => {
+    if (!epub || readingMode || !settings.autoHideChrome) {
+      setChromeHidden(false);
+      if (chromeTimer.current) clearTimeout(chromeTimer.current);
+      return;
+    }
+    const blocked = () => sidebarOpen || showFontPanel || isSearching;
+    const wake = () => {
+      setChromeHidden(false);
+      if (chromeTimer.current) clearTimeout(chromeTimer.current);
+      chromeTimer.current = setTimeout(() => {
+        if (!blocked()) setChromeHidden(true);
+      }, 2500);
+    };
+    wake();
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'];
+    events.forEach((ev) => window.addEventListener(ev, wake, { passive: true }));
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, wake));
+      if (chromeTimer.current) clearTimeout(chromeTimer.current);
+    };
+  }, [epub, readingMode, settings.autoHideChrome, sidebarOpen, showFontPanel, isSearching]);
+
   // --- keyboard ------------------------------------------------------------
 
   useEffect(() => {
@@ -700,16 +730,28 @@ const EPUBReader = () => {
         <span className="font-value">{settings.lineHeight.toFixed(2)}</span>
       </div>
       <div className="font-row">
-        <label>Page width</label>
+        <label>Column width</label>
         <input
           type="range"
-          min="480"
-          max="1100"
+          min="260"
+          max="720"
           step="20"
           value={settings.pageWidth}
           onChange={(e) => updateSettings({ pageWidth: parseInt(e.target.value, 10) })}
         />
         <span className="font-value">{settings.pageWidth}px</span>
+      </div>
+      <div className="font-row">
+        <label>Auto-hide bars</label>
+        <button
+          type="button"
+          className={`font-toggle ${settings.autoHideChrome ? 'active' : ''}`}
+          role="switch"
+          aria-checked={settings.autoHideChrome}
+          onClick={() => updateSettings({ autoHideChrome: !settings.autoHideChrome })}
+        >
+          {settings.autoHideChrome ? 'On' : 'Off'}
+        </button>
       </div>
       <div className="font-row">
         <label>Progress bar</label>
@@ -926,7 +968,11 @@ const EPUBReader = () => {
           {settings.showProgress && renderProgressBar()}
         </div>
       ) : (
-        <div className={`reader-container ${settings.showProgress ? 'has-progress' : ''}`}>
+        <div
+          className={`reader-container ${settings.showProgress ? 'has-progress' : ''} ${
+            settings.autoHideChrome ? 'chrome-autohide' : ''
+          } ${chromeHidden ? 'chrome-hidden' : ''}`}
+        >
           <header className="header">
             <div className="header-left">
               <button className="back-button" onClick={backToMenu} aria-label="Home">

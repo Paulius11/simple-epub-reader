@@ -14,8 +14,9 @@ const DEFAULT_SETTINGS = {
   fontSize: 18, // px
   fontFamily: 'serif', // 'serif' | 'sans' | 'mono'
   lineHeight: 1.7,
-  pageWidth: 720, // px max-width
+  pageWidth: 360, // px; column width in the paged reader (narrower => more columns)
   showProgress: false, // show the chapter/progress bar at the bottom
+  autoHideChrome: false, // auto-hide header + bottom bar while reading
 };
 
 const safeGet = (key) => {
