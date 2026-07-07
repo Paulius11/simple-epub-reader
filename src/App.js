@@ -261,6 +261,8 @@ const EPUBReader = () => {
     settings.fontFamily,
     settings.lineHeight,
     settings.pageWidth,
+    settings.paragraphSpacing,
+    settings.justify,
     measurePages,
     goToPage,
   ]);
@@ -678,6 +680,9 @@ const EPUBReader = () => {
     '--reader-font-size': `${settings.fontSize}px`,
     '--reader-line-height': settings.lineHeight,
     '--reader-page-width': `${settings.pageWidth}px`,
+    '--reader-para-spacing': `${settings.paragraphSpacing}em`,
+    '--reader-text-align': settings.justify ? 'justify' : 'left',
+    '--reader-hyphens': settings.justify ? 'auto' : 'manual',
   };
 
   // --- sub-renders ---------------------------------------------------------
@@ -756,6 +761,30 @@ const EPUBReader = () => {
           onChange={(e) => updateSettings({ lineHeight: parseFloat(e.target.value) })}
         />
         <span className="font-value">{settings.lineHeight.toFixed(2)}</span>
+      </div>
+      <div className="font-row">
+        <label>Paragraph gap</label>
+        <input
+          type="range"
+          min="0"
+          max="1.6"
+          step="0.1"
+          value={settings.paragraphSpacing}
+          onChange={(e) => updateSettings({ paragraphSpacing: parseFloat(e.target.value) })}
+        />
+        <span className="font-value">{settings.paragraphSpacing.toFixed(1)}em</span>
+      </div>
+      <div className="font-row">
+        <label>Justify text</label>
+        <button
+          type="button"
+          className={`font-toggle ${settings.justify ? 'active' : ''}`}
+          role="switch"
+          aria-checked={settings.justify}
+          onClick={() => updateSettings({ justify: !settings.justify })}
+        >
+          {settings.justify ? 'On' : 'Off'}
+        </button>
       </div>
       <div className="font-row">
         <label>Column width</label>

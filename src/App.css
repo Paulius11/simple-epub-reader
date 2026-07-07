@@ -200,8 +200,11 @@
 }
 
 .chapter-content p {
-    margin-bottom: 20px;
-    text-align: justify;
+    margin-bottom: var(--reader-para-spacing, 0.6em);
+    text-align: var(--reader-text-align, left);
+    /* Soft-hyphenate only when justified, to avoid big inter-word gaps. */
+    hyphens: var(--reader-hyphens, manual);
+    overflow-wrap: break-word;
 }
 
 /* ---- Paged multi-column reader -------------------------------------------- */
@@ -422,6 +425,13 @@
     font-size: var(--reader-font-size, 20px);
     line-height: var(--reader-line-height, 1.8);
     font-family: var(--reader-font-family, inherit);
+}
+
+.reading-mode-content p {
+    margin-bottom: var(--reader-para-spacing, 0.6em);
+    text-align: var(--reader-text-align, left);
+    hyphens: var(--reader-hyphens, manual);
+    overflow-wrap: break-word;
 }
 
 .reading-nav-area {

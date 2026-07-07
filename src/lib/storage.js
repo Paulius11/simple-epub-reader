@@ -17,6 +17,8 @@ const DEFAULT_SETTINGS = {
   pageWidth: 360, // px; column width in the paged reader (narrower => more columns)
   showProgress: false, // show the chapter/progress bar at the bottom
   autoHideChrome: true, // auto-hide header + bottom bar while reading
+  justify: false, // justify text (off = ragged-right, easier on narrow columns)
+  paragraphSpacing: 0.6, // em gap between paragraphs/verse lines
 };
 
 const safeGet = (key) => {
