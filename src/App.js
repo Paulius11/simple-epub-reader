@@ -548,7 +548,9 @@ const EPUBReader = () => {
       if (chromeTimer.current) clearTimeout(chromeTimer.current);
       return;
     }
-    const EDGE = 72; // px from top/bottom that counts as the reveal zone
+    // Thin strip at the very edge, so the first/last text line (which sits a
+    // little inside the padding) stays selectable without popping the bars.
+    const EDGE = 10;
     const blocked = () => sidebarOpen || showFontPanel || isSearching;
     const scheduleHide = (delay) => {
       if (chromeTimer.current) clearTimeout(chromeTimer.current);
@@ -557,6 +559,10 @@ const EPUBReader = () => {
       }, delay);
     };
     const onMove = (e) => {
+      // While a button is held the user is selecting/dragging — never change the
+      // bars, otherwise dragging a selection up to the first line pops the header
+      // over the text.
+      if (e.buttons) return;
       const nearEdge = e.clientY <= EDGE || e.clientY >= window.innerHeight - EDGE;
       if (nearEdge) {
         setChromeHidden(false);
