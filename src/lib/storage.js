@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   autoHideChrome: true, // auto-hide header + bottom bar while reading
   justify: false, // justify text (off = ragged-right, easier on narrow columns)
   paragraphSpacing: 0.6, // em gap between paragraphs/verse lines
+  speedReadWpm: 300, // RSVP speed-reader words per minute
 };
 
 const safeGet = (key) => {

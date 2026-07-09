@@ -1126,3 +1126,128 @@
         max-width: 100vw;
     }
 }
+
+/* ============================================================ */
+/*  RSVP speed reader                                            */
+/* ============================================================ */
+
+.rsvp-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+}
+
+.rsvp-close {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+}
+
+.rsvp-stage {
+    position: relative;
+    width: min(680px, 92vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Centre guide ticks above/below the pivot letter. */
+.rsvp-guide {
+    width: 2px;
+    height: 16px;
+    background: var(--border-color);
+}
+
+.rsvp-word {
+    display: flex;
+    width: 100%;
+    font-family: var(--reader-font-family, Georgia, serif);
+    font-size: clamp(32px, 7vw, 64px);
+    line-height: 1.2;
+    padding: 14px 0;
+    white-space: pre;
+}
+
+.rsvp-before {
+    flex: 1;
+    text-align: right;
+    color: var(--text-primary);
+}
+
+.rsvp-after {
+    flex: 1;
+    text-align: left;
+    color: var(--text-primary);
+}
+
+.rsvp-pivot {
+    color: #e5484d;
+    font-weight: 600;
+}
+
+.rsvp-end {
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.rsvp-progress {
+    width: min(680px, 92vw);
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.rsvp-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+    transition: width 0.1s linear;
+}
+
+.rsvp-controls {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.rsvp-play {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: var(--gradient-start);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rsvp-wpm {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.rsvp-wpm input[type='range'] {
+    width: min(280px, 60vw);
+}
+
+.rsvp-wpm-value {
+    min-width: 70px;
+    font-variant-numeric: tabular-nums;
+}
+
+.rsvp-count {
+    min-width: 80px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}

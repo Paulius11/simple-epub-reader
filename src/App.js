@@ -15,6 +15,12 @@ import {
   Type,
   Trash2,
   Copy,
+  Zap,
+  Play,
+  Pause,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
 } from 'lucide-react';
 import { parseEpub } from './lib/epub';
 import * as storage from './lib/storage';
@@ -55,6 +61,129 @@ const ChapterHtml = React.memo(function ChapterHtml({ html, className, innerRef,
     />
   );
 });
+
+// Optimal Recognition Point: which letter to center/highlight (Spritz-style).
+const pivotIndex = (word) => {
+  const n = word.length;
+  if (n <= 1) return 0;
+  if (n <= 5) return 1;
+  if (n <= 9) return 2;
+  if (n <= 13) return 3;
+  return 4;
+};
+
+// RSVP speed reader: flashes one word at a time at a fixed WPM, with the pivot
+// letter aligned to the centre line for minimal eye movement.
+const SpeedReader = ({ words, wpm, onWpm, onClose }) => {
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const timer = useRef(null);
+
+  const total = words.length;
+  const done = index >= total;
+  const word = done ? '' : words[index];
+
+  // Advance while playing; pause longer on long words and sentence punctuation.
+  useEffect(() => {
+    if (!playing || done) return;
+    const base = 60000 / wpm;
+    let delay = base;
+    if (/[.,!?;:—–]$/.test(word)) delay += base * 0.9;
+    if (word.length > 8) delay += base * 0.3;
+    timer.current = setTimeout(() => setIndex((i) => i + 1), delay);
+    return () => clearTimeout(timer.current);
+  }, [playing, index, wpm, word, done]);
+
+  useEffect(() => {
+    if (done) setPlaying(false);
+  }, [done]);
+
+  const restart = () => {
+    setIndex(0);
+    setPlaying(true);
+  };
+  const step = (d) => {
+    setPlaying(false);
+    setIndex((i) => Math.max(0, Math.min(total - 1, i + d)));
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === ' ') { e.preventDefault(); setPlaying((p) => !p); }
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'ArrowRight') step(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
+
+  const p = pivotIndex(word);
+  const pct = total ? Math.round((Math.min(index, total) / total) * 100) : 0;
+
+  return (
+    <div className="rsvp-overlay" role="dialog" aria-label="Speed reader">
+      <button className="rsvp-close icon-button" onClick={onClose} aria-label="Close speed reader">
+        <X size={22} />
+      </button>
+
+      <div className="rsvp-stage">
+        <div className="rsvp-guide" />
+        {done ? (
+          <div className="rsvp-word rsvp-end">Done</div>
+        ) : (
+          <div className="rsvp-word">
+            <span className="rsvp-before">{word.slice(0, p)}</span>
+            <span className="rsvp-pivot">{word.slice(p, p + 1)}</span>
+            <span className="rsvp-after">{word.slice(p + 1)}</span>
+          </div>
+        )}
+        <div className="rsvp-guide" />
+      </div>
+
+      <div className="rsvp-progress">
+        <div className="rsvp-progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+
+      <div className="rsvp-controls">
+        <button className="icon-button" onClick={() => step(-1)} aria-label="Previous word">
+          <SkipBack size={20} />
+        </button>
+        <button className="rsvp-play" onClick={() => (done ? restart() : setPlaying((v) => !v))}>
+          {done ? <RotateCcw size={22} /> : playing ? <Pause size={22} /> : <Play size={22} />}
+        </button>
+        <button className="icon-button" onClick={() => step(1)} aria-label="Next word">
+          <SkipForward size={20} />
+        </button>
+        <button className="icon-button" onClick={restart} aria-label="Restart">
+          <RotateCcw size={18} />
+        </button>
+      </div>
+
+      <div className="rsvp-wpm">
+        <button className="icon-button" onClick={() => onWpm(Math.max(100, wpm - 25))} aria-label="Slower">
+          −
+        </button>
+        <input
+          type="range"
+          min="100"
+          max="900"
+          step="25"
+          value={wpm}
+          onChange={(e) => onWpm(parseInt(e.target.value, 10))}
+        />
+        <button className="icon-button" onClick={() => onWpm(Math.min(900, wpm + 25))} aria-label="Faster">
+          +
+        </button>
+        <span className="rsvp-wpm-value">{wpm} wpm</span>
+        <span className="rsvp-count">
+          {Math.min(index + 1, total)} / {total}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 const FONT_FAMILIES = {
   serif: 'Georgia, "Times New Roman", serif',
@@ -108,6 +237,7 @@ const EPUBReader = () => {
   const [page, setPage] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [chromeHidden, setChromeHidden] = useState(false); // auto-hide header/footer
+  const [speedWords, setSpeedWords] = useState(null); // RSVP words, or null when closed
 
   const fileInputRef = useRef(null);
   const chromeTimer = useRef(null); // inactivity timer for auto-hide
@@ -540,6 +670,37 @@ const EPUBReader = () => {
     el.focus?.();
   };
 
+  // --- speed reading (RSVP) ------------------------------------------------
+
+  // Words shown on the currently visible page (paged view), in reading order.
+  const collectPageWords = () => {
+    const vp = viewportRef.current;
+    const el = contentRef.current;
+    if (!vp || !el) return [];
+    const vr = vp.getBoundingClientRect();
+    const words = [];
+    el.querySelectorAll('p, h1, h2, h3, h4, li, blockquote').forEach((b) => {
+      const r = b.getBoundingClientRect();
+      const left = r.left - vr.left;
+      const right = r.right - vr.left;
+      if (right > 2 && left < vr.width - 2) {
+        const t = (b.textContent || '').trim();
+        if (t) words.push(...t.split(/\s+/));
+      }
+    });
+    return words;
+  };
+
+  const openSpeedRead = () => {
+    const words = readingMode
+      ? ((contentRef.current?.innerText || '').trim().split(/\s+/).filter(Boolean))
+      : collectPageWords();
+    if (!words.length) return;
+    setShowFloatingMenu(false);
+    setShowFontPanel(false);
+    setSpeedWords(words);
+  };
+
   // --- reading mode --------------------------------------------------------
 
   const toggleReadingMode = () => {
@@ -605,6 +766,8 @@ const EPUBReader = () => {
       // Don't hijack typing in inputs.
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      // Speed reader has its own key handling; don't also flip pages.
+      if (speedWords) return;
 
       // In the paged reader, arrows flip pages (and cross chapter boundaries);
       // in reading mode they still jump whole chapters.
@@ -622,7 +785,7 @@ const EPUBReader = () => {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChapter, readingMode, isSearching, sidebarOpen, showFontPanel, chapters, bookId, chapterScrollRatio, nextPage, prevPage]);
+  }, [currentChapter, readingMode, isSearching, sidebarOpen, showFontPanel, chapters, bookId, chapterScrollRatio, nextPage, prevPage, speedWords]);
 
   // --- back to home --------------------------------------------------------
 
@@ -1037,6 +1200,9 @@ const EPUBReader = () => {
             >
               <Copy size={20} />
             </button>
+            <button className="icon-button" onClick={openSpeedRead} aria-label="Speed read">
+              <Zap size={20} />
+            </button>
             <button className="icon-button" onClick={toggleTheme}>
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -1044,6 +1210,14 @@ const EPUBReader = () => {
 
           {renderSidebar()}
           {settings.showProgress && renderProgressBar()}
+          {speedWords && (
+            <SpeedReader
+              words={speedWords}
+              wpm={settings.speedReadWpm}
+              onWpm={(w) => updateSettings({ speedReadWpm: w })}
+              onClose={() => setSpeedWords(null)}
+            />
+          )}
         </div>
       ) : (
         <div
@@ -1101,6 +1275,15 @@ const EPUBReader = () => {
                 title="Select all text in this chapter"
               >
                 <Copy size={20} />
+              </button>
+
+              <button
+                className="icon-button"
+                onClick={openSpeedRead}
+                aria-label="Speed read this page"
+                title="Speed read (RSVP)"
+              >
+                <Zap size={20} />
               </button>
 
               <div className="font-button-wrap">
@@ -1204,6 +1387,14 @@ const EPUBReader = () => {
 
           {settings.showProgress && renderProgressBar()}
           {renderSidebar()}
+          {speedWords && (
+            <SpeedReader
+              words={speedWords}
+              wpm={settings.speedReadWpm}
+              onWpm={(w) => updateSettings({ speedReadWpm: w })}
+              onClose={() => setSpeedWords(null)}
+            />
+          )}
         </div>
       )}
     </div>
