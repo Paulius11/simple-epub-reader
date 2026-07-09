@@ -41,6 +41,21 @@ const HighlightedText = ({ text, searchQuery }) => {
   );
 };
 
+// The chapter HTML is injected via dangerouslySetInnerHTML. Memoize it so that
+// unrelated re-renders (revealing the auto-hidden bars, page-counter updates,
+// scroll-ratio changes, etc.) don't cause React to re-apply innerHTML — which
+// would recreate every child node and wipe the user's text selection.
+const ChapterHtml = React.memo(function ChapterHtml({ html, className, innerRef, onScroll }) {
+  return (
+    <div
+      ref={innerRef}
+      className={className}
+      onScroll={onScroll}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 const FONT_FAMILIES = {
   serif: 'Georgia, "Times New Roman", serif',
   sans: '-apple-system, "Segoe UI", system-ui, sans-serif',
@@ -986,11 +1001,11 @@ const EPUBReader = () => {
             <ChevronLeft size={40} style={{ marginLeft: '20px' }} />
           </button>
 
-          <div
-            ref={contentRef}
+          <ChapterHtml
+            innerRef={contentRef}
             className="reading-mode-content"
             onScroll={handleContentScroll}
-            dangerouslySetInnerHTML={{ __html: content }}
+            html={content}
           />
 
           <button
@@ -1121,10 +1136,10 @@ const EPUBReader = () => {
             </button>
 
             <div ref={viewportRef} className="paged-viewport" onScroll={handleViewportScroll}>
-              <div
-                ref={contentRef}
+              <ChapterHtml
+                innerRef={contentRef}
                 className="chapter-content paged-content"
-                dangerouslySetInnerHTML={{ __html: content }}
+                html={content}
               />
               <div ref={spacerRef} className="paged-spacer" aria-hidden="true" />
             </div>
