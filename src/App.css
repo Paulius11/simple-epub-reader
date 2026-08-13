@@ -579,16 +579,24 @@
     position: relative;
 }
 
-/* Reserve space for the absolutely-positioned progress bar only when it's shown. */
-.reader-container.has-progress .navigation-bar {
-    padding-bottom: 36px;
+/* Bottom chrome: progress bar stacked ABOVE the Previous/Contents/Next bar. */
+.reader-bottom .progress-bar {
+    position: static;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    pointer-events: auto;
+}
+
+/* Avoid a double divider between the stacked progress + nav bars. */
+.reader-bottom .progress-bar + .navigation-bar {
+    border-top: none;
 }
 
 /* ---- Auto-hide header + bottom bar ---------------------------------------- */
 /* When enabled the chrome overlays the content (so the content area gets the
    full height) and slides out of view after inactivity. */
 .reader-container.chrome-autohide .header,
-.reader-container.chrome-autohide .navigation-bar {
+.reader-container.chrome-autohide .reader-bottom {
     position: absolute;
     left: 0;
     right: 0;
@@ -600,7 +608,7 @@
     top: 0;
 }
 
-.reader-container.chrome-autohide .navigation-bar {
+.reader-container.chrome-autohide .reader-bottom {
     bottom: 0;
 }
 
@@ -610,7 +618,7 @@
     pointer-events: none;
 }
 
-.reader-container.chrome-autohide.chrome-hidden .navigation-bar {
+.reader-container.chrome-autohide.chrome-hidden .reader-bottom {
     transform: translateY(100%);
     opacity: 0;
     pointer-events: none;
@@ -660,7 +668,7 @@
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--border-color);
-    padding: 8px;
+    padding: 4px 6px;
     gap: 4px;
 }
 
@@ -669,7 +677,7 @@
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    padding: 10px 12px;
+    padding: 7px 10px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 13px;
@@ -698,7 +706,7 @@
 .sidebar-body {
     flex: 1;
     overflow-y: auto;
-    padding: 8px;
+    padding: 4px 8px 8px;
 }
 
 .toc-list,

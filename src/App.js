@@ -1360,32 +1360,34 @@ const EPUBReader = () => {
             )}
           </div>
 
-          <nav className="navigation-bar">
-            <button
-              className="nav-button"
-              onClick={() => goToChapter(currentChapter - 1)}
-              disabled={currentChapter === 0}
-            >
-              <ChevronLeft size={18} />
-              Previous
-            </button>
+          <div className="reader-bottom">
+            {settings.showProgress && renderProgressBar()}
+            <nav className="navigation-bar">
+              <button
+                className="nav-button"
+                onClick={() => goToChapter(currentChapter - 1)}
+                disabled={currentChapter === 0}
+              >
+                <ChevronLeft size={18} />
+                Previous
+              </button>
 
-            <button className="nav-button toc-button" onClick={() => setSidebarOpen(true)}>
-              <List size={18} />
-              Contents
-            </button>
+              <button className="nav-button toc-button" onClick={() => setSidebarOpen(true)}>
+                <List size={18} />
+                Contents
+              </button>
 
-            <button
-              className="nav-button"
-              onClick={() => goToChapter(currentChapter + 1)}
-              disabled={currentChapter === chapters.length - 1}
-            >
-              Next
-              <ChevronRight size={18} />
-            </button>
-          </nav>
+              <button
+                className="nav-button"
+                onClick={() => goToChapter(currentChapter + 1)}
+                disabled={currentChapter === chapters.length - 1}
+              >
+                Next
+                <ChevronRight size={18} />
+              </button>
+            </nav>
+          </div>
 
-          {settings.showProgress && renderProgressBar()}
           {renderSidebar()}
           {speedWords && (
             <SpeedReader
